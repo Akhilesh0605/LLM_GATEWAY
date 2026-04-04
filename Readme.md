@@ -163,7 +163,7 @@ llm-gateway/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
-├── .env.example
+├── .env
 └── README.md
 ```
 
