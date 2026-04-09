@@ -93,7 +93,10 @@ These are easy to update after a run:
 - Groq API (LLaMA 3 models)
 - Redis — semantic cache with cosine similarity
 - PostgreSQL — request logs and analytics
-- Docker Compose — runs everything together
+- Docker (Redis only) + Local services
+  - Redis runs via Docker
+  - FastAPI runs locally
+  - PostgreSQL runs locally
 
 ---
 
@@ -110,17 +113,21 @@ Create a `.env` file and fill it in:
 
 ```env
 GROQ_API_KEY=your_key_here
-REDIS_URL=redis://redis:6379
+REDIS_URL=redis://localhost:6379
 DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/llmgateway
 DAILY_BUDGET_USD=10.0
 ```
 
 Then:
 
+# Start Redis using Docker
 ```bash
-docker-compose up --build
+docker run -d -p 6379:6379 redis:7
 ```
-
+# Run FastAPI locally
+```bash
+uvicorn app.main:app --reload
+```
 App runs on `http://localhost:8000`.
 
 ---
