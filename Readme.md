@@ -1,6 +1,6 @@
 # llm-gateway
 
-A backend service that routes LLM queries to the right model based on complexity — so you're not paying GPT-4 prices for questions a smaller model handles just as well.
+A backend service that routes LLM queries to the right model based on complexity, then uses semantic caching to avoid unnecessary repeat calls.
 
 Built with FastAPI, Redis, PostgreSQL, and Groq.
 
@@ -8,20 +8,81 @@ Built with FastAPI, Redis, PostgreSQL, and Groq.
 
 ## Why I built this
 
-Most apps just send every request to the most powerful (and expensive) model available. That works, but it's wasteful. A question like "what is a REST API" doesn't need the same model as "design a rate limiter for a distributed system."
+Most apps just send every request to the most powerful model available. That works, but it is expensive and slower than it needs to be. A simple question does not need the same LLM as a complex one.
 
-This project sits in front of your LLM calls and makes that decision automatically. It also caches responses using embeddings — so similar questions don't hit the API at all.
+This project sits in front of LLM calls and makes that decision automatically. The goal is simple: cut cost, reduce latency, and avoid calling an LLM when the answer already exists in cache.
+
+---
+
+## What makes this different
+
+- Semantic caching using embeddings instead of exact string matching
+- Cosine similarity to find near-duplicate questions
+- Complexity-based routing so each query goes to a model that fits the task
+- Cost-aware design that tries to keep expensive calls to a minimum
 
 ---
 
 ## What it does
 
-- Checks if a similar query was already answered (semantic cache via Redis)
+- Checks if a similar query was already answered using a semantic cache in Redis
 - If not, scores the query complexity from 1–10
 - Routes to the cheapest model that can handle it
 - Falls back to a stronger model if the primary one fails
 - Logs every request to PostgreSQL — model used, tokens, cost, latency
 - Runs a background evaluation loop to check if routing decisions are actually good
+- Uses similarity scoring internally to decide whether a cached answer is close enough
+
+---
+
+## How it works
+
+```text
+User Query
+   → Classifier (score 1–10)
+   → Router (select model)
+   → Cache check (embeddings + cosine similarity)
+   → HIT → return cached response
+   → MISS → call LLM → store → return
+```
+
+---
+
+## Example Response
+
+```json
+{
+  "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "response": "A binary search tree is...",
+  "model_used": "llama-3.1-8b-instant",
+  "tier": "simple",
+  "complexity_score": 2,
+  "cache_hit": false,
+  "latency_ms": 310,
+  "tokens_used": 198,
+  "cost_usd": 0.000041,
+  "similarity_score": 0.92
+}
+```
+
+`similarity_score` is optional and mostly useful for debugging cache behavior.
+
+---
+
+## Example Metrics
+
+These are easy to update after a run:
+
+- Cache hit rate: 68%
+- Cost saved: 41%
+- Average latency: 184 ms
+
+---
+
+## Performance Insight
+
+- Cache miss: slower, costs a real API call, and uses tokens
+- Cache hit: much faster and basically free
 
 ---
 
@@ -43,10 +104,9 @@ You need Docker and a Groq API key. That's it.
 ```bash
 git clone https://github.com/Akhilesh0605/llm-gateway.git
 cd llm-gateway
-cp .env.example .env
 ```
 
-Fill in `.env`:
+Create a `.env` file and fill it in:
 
 ```env
 GROQ_API_KEY=your_key_here
@@ -84,11 +144,12 @@ Response:
   "cache_hit": false,
   "latency_ms": 310,
   "tokens_used": 198,
-  "cost_usd": 0.000041
+  "cost_usd": 0.000041,
+  "similarity_score": 0.92
 }
 ```
 
-Response headers tell you what happened:
+If you expose headers, they can look like this:
 
 ```
 X-Model-Used: llama-3.1-8b-instant
@@ -117,9 +178,9 @@ Every query gets a complexity score from 1 to 10 based on token count, structure
 
 | Score | Model |
 |---|---|
-| 1–3 | model-1|
-| 4–6 | model-2 |
-| 7–10 | model-3 |
+| 1–3 | llama-3.1-8b-instant|
+| 4–6 | llama-3.3-70b-versatile |
+| 7–10 |openai/gpt-oss-120b |
 
 If the routed model fails, it tries the next one up. If the daily budget is exceeded, everything routes to the cheapest model until midnight.
 
@@ -139,6 +200,22 @@ Thresholds are per complexity tier because a near-match on a simple factual ques
 
 ---
 
+## System Architecture
+
+```text
+Client
+  ↓
+FastAPI
+  ↓
+Redis (cache)
+  ↓
+PostgreSQL (logs)
+  ↓
+LLM APIs
+```
+
+---
+
 ## Evaluation loop
 
 About 10% of requests — and anything that scores right on a routing boundary (3 or 6) — get sent to both the routed model and the strongest model. The outputs are compared with cosine similarity and logged.
@@ -152,20 +229,31 @@ Over time this shows whether the routing thresholds are actually working, and wh
 ```
 llm-gateway/
 ├── app/
-│   ├── main.py
-│   ├── config.py
-│   ├── models.py
-│   ├── classifier.py
-│   ├── router.py
-│   ├── cache.py
-│   ├── analytics.py
-│   └── llm_client.py
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-├── .env
+│   ├── main.py        # FastAPI app, query flow, and endpoints
+│   ├── config.py      # Environment settings and model thresholds
+│   ├── models.py      # Request/response schemas and routing types
+│   ├── classifier.py  # Complexity scoring logic
+│   ├── router.py      # Model selection and budget checks
+│   ├── cache.py       # Semantic cache lookup and storage
+│   ├── analytics.py   # Request logging and analytics queries
+│   ├── llm_client.py  # LLM API calls and fallback handling
+│   └── evaluation.py  # Shadow evaluation and agreement scoring
+├── docker-compose.yaml # Local stack for app, Redis, and PostgreSQL
+├── init_db.py          # Creates the database tables
+├── requirements.txt    # Python dependencies
 └── README.md
 ```
+
+Main files in `app/` do the heavy lifting, while the root files are just for setup and running the project.
+
+---
+
+## Future Improvements
+
+- Add a vector database such as FAISS or Pinecone for larger cache lookups
+- Build a simple frontend UI for testing and viewing results
+- Add rate limiting to control abuse and keep costs predictable
+- Support multi-provider routing beyond the current Groq setup
 
 ---
 
