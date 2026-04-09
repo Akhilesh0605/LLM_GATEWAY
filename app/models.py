@@ -12,6 +12,7 @@ class RouteDecision(BaseModel):
     tier: ComplexityTier
     selected_model: str
     budget_exceeded: bool = False
+    is_boundary: bool = False
 
 class QueryRequest(BaseModel):
     query : str=Field(min_length=1,max_length=5000)
@@ -27,5 +28,6 @@ class QueryResponse(BaseModel):
     latency_ms:float=Field(ge=0)
     tokens_used:int = Field(ge=0)
     cost_usd:float = Field(ge=0)
+    similarity_score: float | None = None
 
      

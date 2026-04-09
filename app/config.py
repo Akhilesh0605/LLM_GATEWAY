@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     
     MODEL_SIMPLE: str = "llama-3.1-8b-instant"  #models names to route
     MODEL_MEDIUM: str = "llama-3.3-70b-versatile"
-    MODEL_COMPLEX: str = "llama-3.1-405b-reasoning"
+    MODEL_COMPLEX: str = "openai/gpt-oss-120b"
   
     SIMILARITY_THRESHOLD_SIMPLE: float = 0.90  #threshold to route
     SIMILARITY_THRESHOLD_MEDIUM: float = 0.92

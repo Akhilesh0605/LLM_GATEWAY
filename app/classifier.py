@@ -5,7 +5,7 @@ def classify(query : str) -> tuple[int,ComplexityTier]:
     token_score=0
     length=len(query.split())
     if(length) < 10 : token_score+=1
-    elif(10<length<30) : token_score+=3
+    elif(10<=length<30) : token_score+=3
     else : token_score+=5
 
     #keyword detection & technical terms & structure 
@@ -39,6 +39,7 @@ def classify(query : str) -> tuple[int,ComplexityTier]:
     for term in technical_terms:
         if term in query_lower: terms+=1
 
+    keyword_score = min(keyword_score, 4)
     if terms==0 : technical_score=0
     elif terms<3 : technical_score=2
     else : technical_score=4
