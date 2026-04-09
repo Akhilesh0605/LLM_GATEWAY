@@ -77,13 +77,13 @@ These are easy to update after a run:
 - Cost saved: 41%
 - Average latency: 184 ms
 
+These numbers depend on workload, but even a small cache hit rate significantly reduces cost and improves response time.
 ---
 
 ## Performance Insight
 
-- Cache miss: slower, costs a real API call, and uses tokens
-- Cache hit: much faster and basically free
-
+- Cache miss: triggers an LLM call (higher latency and cost)
+- Cache hit: returns instantly from Redis (low latency, zero cost)
 ---
 
 ## Stack
@@ -185,7 +185,7 @@ Every query gets a complexity score from 1 to 10 based on token count, structure
 
 | Score | Model |
 |---|---|
-| 1–3 | llama-3.1-8b-instant|
+| 1–3 | llama-3.1-8b-instant |
 | 4–6 | llama-3.3-70b-versatile |
 | 7–10 |openai/gpt-oss-120b |
 
@@ -279,7 +279,7 @@ Main files in `app/` do the heavy lifting, while the root files are just for set
 | `CACHE_TTL_COMPLEX` | 1800 | Cache lifetime in seconds |
 
 ---
+## Notes
 
-## License
+This project focuses on optimizing LLM usage in real-world scenarios by combining routing, caching, and cost-awareness into a single system.
 
-MIT
