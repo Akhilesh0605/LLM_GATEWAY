@@ -245,6 +245,17 @@ curl -X POST http://localhost:8000/query \
 `GET /health` — check if Redis and Postgres are reachable
 
 ---
+## Live Demo
+
+Base URL: https://llm-gateway-04sy.onrender.com
+
+Try:
+- /docs
+- /query
+- /analytics
+- /analytics/benchmark
+
+---
 
 ## How routing works
 
@@ -330,6 +341,9 @@ llm-gateway/
 ├── docker-compose.yaml
 ├── init_db.py
 ├── requirements.txt
+├── assets/ # Screenshots used in README (cache hits, analytics, etc.)
+├── docs/ # Additional documentation (performance report PDF)
+│   └── performance-report.pdf
 └── README.md
 ```
 
