@@ -12,10 +12,16 @@ from app.llm_client import call_llm
 from app.analytics import log_request, get_analytics, get_benchmark
 from app.evaluation import run_evaluation
 from app.config import get_settings
+from app.analytics import init_db
+
+
 
 app = FastAPI()
 settings = get_settings()
 
+@app.on_event("startup")
+async def startup_event():
+    await init_db()
 # Redis client
 redis_client = redis.from_url(settings.REDIS_SERVER_LINK)
 

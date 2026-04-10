@@ -28,7 +28,7 @@ async def check_cache(query:str,tier:ComplexityTier,redis_client)->str|None :
     raw_responses=await redis_client.get("cache:responses")
 
     if not raw_embeddings or not raw_responses :
-        return None
+        return None,0.0
     
     embeddings=json.loads(raw_embeddings)
     embeddings = [np.array(e) for e in embeddings]

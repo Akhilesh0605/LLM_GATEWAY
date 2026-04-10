@@ -1,7 +1,7 @@
 # llm-gateway
+A cost-aware LLM gateway that routes queries based on complexity and reduces latency and API cost using semantic caching.
 
-A backend service that routes LLM queries to the right model based on complexity, then uses semantic caching to avoid unnecessary repeat calls.
-
+Achieves ~100x latency improvement and ~35% cost savings by avoiding redundant LLM calls.
 Built with FastAPI, Redis, PostgreSQL, and Groq.
 
 ---
@@ -48,44 +48,141 @@ User Query
 
 ---
 
-## Example Response
+## Verified Results
+
+These are real numbers from running the system locally, not estimates.
+
+**Analytics after 7 requests:**
 
 ```json
 {
-  "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-  "response": "A binary search tree is...",
+  "total_requests": 7,
+  "avg_latency_ms": 1582.85,
+  "total_cost_usd": 0.0044,
+  "cache_hit_rate": 42.86,
+  "cost_saved_usd": 0.0024,
+  "cost_saved_percent": 35.55,
+  "total_tokens": 3395
+}
+```
+
+**Benchmark — model distribution:**
+
+```json
+{
+  "total_requests": 7,
+  "model_distribution": {
+    "llama-3.1-8b-instant": {
+      "count": 4,
+      "percentage": 57.14
+    },
+    "openai/gpt-oss-120b": {
+      "count": 3,
+      "percentage": 42.86
+    }
+  },
+  "cache_hit_rate": 42.86,
+  "cost_saved_percent": 35.55
+}
+```
+
+---
+
+## Routing in action
+
+**Simple query — cache miss (first time):**
+
+Query: `"what is api"`
+
+```json
+{
   "model_used": "llama-3.1-8b-instant",
   "tier": "simple",
   "complexity_score": 2,
   "cache_hit": false,
-  "latency_ms": 310,
-  "tokens_used": 198,
-  "cost_usd": 0.000041,
-  "similarity_score": 0.92
+  "latency_ms": 1758.29,
+  "tokens_used": 626,
+  "cost_usd": 0.0000313,
+  "similarity_score": 0
 }
 ```
 
-`similarity_score` is optional and mostly useful for debugging cache behavior.
+**Semantic cache hit — similar but not identical query:**
+
+Query: `"define api"` — routed to cache because similarity score 0.951 exceeded the simple tier threshold of 0.90
+
+```json
+{
+  "model_used": "llama-3.1-8b-instant",
+  "tier": "simple",
+  "complexity_score": 2,
+  "cache_hit": true,
+  "latency_ms": 24.89,
+  "tokens_used": 0,
+  "cost_usd": 0,
+  "similarity_score": 0.951
+}
+```
+
+Latency dropped from 1758ms to 24ms. Cost dropped to zero.
+
+**Complex query — routed to stronger model:**
+
+Query: `"design a distributed rate limiter system"`
+
+```json
+{
+  "model_used": "openai/gpt-oss-120b",
+  "tier": "complex",
+  "complexity_score": 8,
+  "cache_hit": false,
+  "latency_ms": 2969.25,
+  "tokens_used": 1077,
+  "cost_usd": 0.002154,
+  "similarity_score": 0.037
+}
+```
+
+**Complex query — semantic cache hit:**
+
+Query: `"how would you build a distributed rate limiting system"` — different wording, same intent.Similarity score (0.876) was below the complex tier threshold (0.95), so the request was sent to the LLM just below threshold, so it called the LLM. But on the second attempt with a closer phrasing, similarity hit 1.0 and returned from cache instantly.
+
+```json
+{
+  "model_used": "openai/gpt-oss-120b",
+  "tier": "complex",
+  "complexity_score": 8,
+  "cache_hit": true,
+  "latency_ms": 17.09,
+  "tokens_used": 0,
+  "cost_usd": 0,
+  "similarity_score": 1
+}
+```
+---
+## Performance Summary
+
+- Latency reduced from ~1750ms → ~20ms using semantic caching (~100x improvement)
+- Cache hit rate: ~42%
+- Cost reduced by ~35% by avoiding repeated LLM calls
+- Zero-token responses for cached queries
+- Semantic matching allows reuse across differently phrased queries
 
 ---
+## Demo
 
-## Example Metrics
+### Cache Miss vs Cache Hit
+- First request: ~1758ms
+- Cached request: ~17ms
 
-These are easy to update after a run:
+### Semantic Match
+- "what is api" → "define api"
+- similarity_score: 0.951 → cache hit
 
-- Cache hit rate: 68%
-- Cost saved: 41%
-- Average latency: 184 ms
-
-These numbers depend on workload, but even a small cache hit rate significantly reduces cost and improves response time.
+### Analytics
+- Cache hit rate: ~42%
+- Cost saved: ~35%
 ---
-
-## Performance Insight
-
-- Cache miss: triggers an LLM call (higher latency and cost)
-- Cache hit: returns instantly from Redis (low latency, zero cost)
----
-
 ## Stack
 
 - Python 3.12
@@ -93,16 +190,13 @@ These numbers depend on workload, but even a small cache hit rate significantly 
 - Groq API (LLaMA 3 models)
 - Redis — semantic cache with cosine similarity
 - PostgreSQL — request logs and analytics
-- Docker (Redis only) + Local services
-  - Redis runs via Docker
-  - FastAPI runs locally
-  - PostgreSQL runs locally
+- Docker Compose — runs FastAPI, Redis, and PostgreSQL together
 
 ---
 
 ## Getting started
 
-You need Docker and a Groq API key. That's it.
+You need Docker and a Groq API key.
 
 ```bash
 git clone https://github.com/Akhilesh0605/llm-gateway.git
@@ -113,20 +207,14 @@ Create a `.env` file and fill it in:
 
 ```env
 GROQ_API_KEY=your_key_here
-REDIS_URL=redis://localhost:6379
+REDIS_URL=redis://redis:6379
 DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/llmgateway
 DAILY_BUDGET_USD=10.0
 ```
 
-Then:
-
-# Start Redis using Docker
+Start the app through Docker
 ```bash
-docker run -d -p 6379:6379 redis:7
-```
-# Run FastAPI locally
-```bash
-uvicorn app.main:app --reload
+docker-compose up --build
 ```
 App runs on `http://localhost:8000`.
 
@@ -138,31 +226,6 @@ App runs on `http://localhost:8000`.
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
   -d '{"query": "what is a binary search tree"}'
-```
-
-Response:
-
-```json
-{
-  "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-  "response": "A binary search tree is...",
-  "model_used": "llama-3.1-8b-instant",
-  "complexity_score": 2,
-  "cache_hit": false,
-  "latency_ms": 310,
-  "tokens_used": 198,
-  "cost_usd": 0.000041,
-  "similarity_score": 0.92
-}
-```
-
-If you expose headers, they can look like this:
-
-```
-X-Model-Used: llama-3.1-8b-instant
-X-Cache-Status: MISS
-X-Latency: 310ms
-X-Request-ID: f47ac10b-58cc-4372-a567-0e02b2c3d479
 ```
 
 ---
@@ -187,7 +250,7 @@ Every query gets a complexity score from 1 to 10 based on token count, structure
 |---|---|
 | 1–3 | llama-3.1-8b-instant |
 | 4–6 | llama-3.3-70b-versatile |
-| 7–10 |openai/gpt-oss-120b |
+| 7–10 | openai/gpt-oss-120b |
 
 If the routed model fails, it tries the next one up. If the daily budget is exceeded, everything routes to the cheapest model until midnight.
 
@@ -206,20 +269,35 @@ Thresholds are per complexity tier because a near-match on a simple factual ques
 | Complex | 0.95 | 30 minutes |
 
 ---
-
-## System Architecture
-
-```text
-Client
-  ↓
-FastAPI
-  ↓
-Redis (cache)
-  ↓
-PostgreSQL (logs)
-  ↓
-LLM APIs
-```
+## Architecture
+    ┌──────────────┐
+    │   User Query │
+    └──────┬───────┘
+           ↓
+    ┌──────────────┐
+    │ Classifier   │  → complexity score (1–10)
+    └──────┬───────┘
+           ↓
+    ┌──────────────┐
+    │ Router       │  → selects model
+    └──────┬───────┘
+           ↓
+    ┌──────────────┐
+    │ Cache (Redis)│  → embeddings + cosine similarity
+    └──────┬───────┘
+     HIT   ↓   MISS
+    ┌──────────────┐
+    │ Return       │
+    │ Cached       │
+    └──────────────┘
+           ↓
+    ┌──────────────┐
+    │ LLM Call     │
+    └──────┬───────┘
+           ↓
+    ┌──────────────┐
+    │ Store Cache  │
+    └──────────────┘
 
 ---
 
@@ -245,13 +323,21 @@ llm-gateway/
 │   ├── analytics.py   # Request logging and analytics queries
 │   ├── llm_client.py  # LLM API calls and fallback handling
 │   └── evaluation.py  # Shadow evaluation and agreement scoring
-├── docker-compose.yaml # Local stack for app, Redis, and PostgreSQL
-├── init_db.py          # Creates the database tables
-├── requirements.txt    # Python dependencies
+├── docker-compose.yaml
+├── init_db.py
+├── requirements.txt
 └── README.md
 ```
 
-Main files in `app/` do the heavy lifting, while the root files are just for setup and running the project.
+---
+## Key Features
+
+- Semantic caching using embeddings (not exact match)
+- Dynamic model routing based on query complexity
+- Cost-aware LLM usage with budget control
+- Automatic fallback to stronger models
+- Background evaluation loop for routing accuracy
+- Real-time analytics (latency, cost, cache hits)
 
 ---
 
@@ -279,7 +365,7 @@ Main files in `app/` do the heavy lifting, while the root files are just for set
 | `CACHE_TTL_COMPLEX` | 1800 | Cache lifetime in seconds |
 
 ---
+
 ## Notes
 
-This project focuses on optimizing LLM usage in real-world scenarios by combining routing, caching, and cost-awareness into a single system.
-
+This project focuses on optimizing LLM usage in real-world scenarios by combining routing, caching, and cost-awareness into a single system. All metrics shown in this README are from actual test runs, not simulated data.
