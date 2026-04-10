@@ -1,4 +1,4 @@
-# llm-gateway
+# LLM-gateway
 A cost-aware LLM gateway that routes queries based on complexity and reduces latency and API cost using semantic caching.
 
 Achieves ~100x latency improvement and ~35% cost savings by avoiding redundant LLM calls.
@@ -174,14 +174,18 @@ Query: `"how would you build a distributed rate limiting system"` — different 
 ### Cache Miss vs Cache Hit
 - First request: ~1758ms
 - Cached request: ~17ms
+![Cache Hit vs Miss](./assets/hit_vs_miss.png)
 
 ### Semantic Match
 - "what is api" → "define api"
 - similarity_score: 0.951 → cache hit
+![Semantic Match](./assets/similarity_score.png)
 
 ### Analytics
 - Cache hit rate: ~42%
 - Cost saved: ~35%
+![Analytics](./assets/analytics.png)
+![Benchmark](./assets/analytics_benchmark.png)
 ---
 ## Stack
 
