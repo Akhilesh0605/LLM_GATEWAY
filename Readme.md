@@ -69,7 +69,7 @@ flowchart LR
 You need Docker. No provider key is required globally — keys are added per tenant at runtime.
 
 ```bash
-git clone https://github.com/<you>/llm-gateway.git
+git clone https://github.com/Akhilesh0605/llm-gateway.git
 cd llm-gateway
 
 cp .env.example .env
