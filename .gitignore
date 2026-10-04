@@ -37,11 +37,6 @@ app/onnx_embedder/
 app/classifier_mlp.npz
 
 # ============================================================
-# README screenshots (stale; regenerate from the live dashboard)
-# ============================================================
-assets/
-
-# ============================================================
 # Training data & pipeline output (large, regenerable)
 # ============================================================
 data/

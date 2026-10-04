@@ -36,14 +36,21 @@ Most apps send every request to the most powerful (and most expensive) model. A 
 
 ## How it works
 
-```text
-User Query
-   → Auth (X-Gateway-Key)
-   → Neural Classifier        → complexity score 1–10
-   → Semantic Cache (Redis)   → HIT? return cached ($0, ~20 ms)
-   → Router                   → user's configured model for the tier
-   → LLM Provider (BYOK key)  → with cascading fallback
-   → Store in cache + log to PostgreSQL + shadow-evaluate
+```mermaid
+flowchart TD
+    Q([User Query]) --> AUTH[Authenticate<br/>X-Gateway-Key]
+    AUTH --> CLS[Neural Classifier<br/>complexity 1–10]
+    CLS --> CACHE{Semantic Cache<br/>Redis}
+    CACHE -- HIT --> HIT[Return cached<br/>$0 · ~20 ms]
+    CACHE -- MISS --> ROUTE[Router<br/>tier to model]
+    ROUTE --> PROVIDER{LLM Provider<br/>BYOK key}
+    PROVIDER -- success --> STORE[Store in cache]
+    STORE --> LOG[Log to PostgreSQL]
+    LOG --> EVAL[Shadow evaluation]
+    LOG --> RESP([Return response])
+    PROVIDER -- failure --> FB{Fallback<br/>Complex to Medium to Simple}
+    FB -- retry --> ROUTE
+    FB -- exhausted --> ERR[502 Bad Gateway]
 ```
 
 ---
@@ -216,6 +223,33 @@ Real measurements from local runs:
 
 ---
 
+## Demo
+
+Real captures from the FastAPI `/docs` while running the gateway against Groq. They show the routing metadata returned by `POST /query`.
+
+**Cache miss → cache hit.** The first `"what is api"` call took **1758 ms**; repeating it returned from the semantic cache in **17 ms** at **$0**.
+
+![Cache miss vs cache hit](assets/hit_vs_miss.png)
+
+**Semantic match across different wording.** `"define api"` is a different string, but the embedding similarity was **0.951** (above the simple-tier threshold of 0.90) — served from cache in **25 ms** at **$0**.
+
+![Semantic match](assets/similarity_score.png)
+
+**Threshold behaviour on complex queries.** `"how would you build a distributed rate limiting system"` only scored **0.876** similarity, below the complex-tier threshold of **0.95** — so the gateway correctly called the LLM instead of returning a possibly-wrong cached answer.
+
+![Threshold behaviour](assets/different_wording.png)
+
+**Complexity routing.** A complex prompt scored **8/10**, routed to `openai/gpt-oss-120b` (**2969 ms**, **$0.002154**); repeating it hit the cache in **17 ms** at **$0** (similarity 1.0).
+
+![Complex routing](assets/complex_model.png)
+
+**Analytics & benchmark.** `/analytics` and `/analytics/benchmark` responses used by the dashboard.
+
+![Analytics](assets/analytics.png)
+![Benchmark](assets/analytics_benchmark.png)
+
+---
+
 ## Configuration
 
 | Variable | Required | Default | Description |
@@ -337,4 +371,4 @@ The Docker build converts the `.pth` to `.npz` and exports the embedder to ONNX 
 
 ## License
 
-Add a license (e.g., MIT) before publishing if you intend others to reuse this.
+Released under the [MIT License](LICENSE) — free to use, modify, and distribute.
