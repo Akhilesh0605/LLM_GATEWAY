@@ -1,6 +1,3 @@
-# Use CPU-only PyTorch (Keeps Docker image lean)
---extra-index-url https://download.pytorch.org/whl/cpu
-
 # Web Framework & Async Server
 fastapi==0.115.6
 uvicorn[standard]==0.30.6
@@ -17,9 +14,9 @@ sqlalchemy[asyncio]==2.0.36
 asyncpg==0.30.0
 redis[hiredis]==5.2.1
 
-# Neural Classification & Semantic Cache (Runtime Only)
-torch==2.2.2
-sentence-transformers==3.3.1
+# Embeddings & Classification (ONNX Runtime — no PyTorch at runtime)
+onnxruntime>=1.18,<2
+tokenizers>=0.20,<1
 numpy==1.26.4
 
 # Networking, Security & Resilience

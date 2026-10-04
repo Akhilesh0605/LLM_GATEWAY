@@ -206,7 +206,10 @@ async def route_and_execute(
             continue
 
     # 4. If all fallbacks failed
+    logger.error(
+        f"All providers failed for user {user.id}. Last error: {last_exception}"
+    )
     raise HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
-        detail=f"All configured LLM providers failed. Last error: {str(last_exception)}",
+        detail="All configured LLM providers failed. Verify your provider API keys and try again.",
     )

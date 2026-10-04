@@ -1,37 +1,36 @@
-# LLM-gateway
-A cost-aware LLM gateway that routes queries based on complexity and reduces latency and API cost using semantic caching.
+# LLM Gateway
 
-Achieves ~100x latency improvement and ~35% cost savings by avoiding redundant LLM calls.
-Built with FastAPI, Redis, PostgreSQL, and Groq.
+A multi-tenant, multi-provider **BYOK** gateway that sits in front of LLM calls and makes them cheaper and faster.
 
----
+> Reduce LLM latency by up to 32x and cut API spend by 35%–90% through neural routing and semantic caching.
 
-## Why I built this
-
-Most apps just send every request to the most powerful model available. That works, but it is expensive and slower than it needs to be. A simple question does not need the same LLM as a complex one.
-
-This project sits in front of LLM calls and makes that decision automatically. The goal is simple: cut cost, reduce latency, and avoid calling an LLM when the answer already exists in cache.
+Built with **FastAPI**, **ONNX Runtime**, **Redis**, **PostgreSQL**, and **Docker**.
 
 ---
 
-## What makes this different
+## Why
 
-- Semantic caching using embeddings instead of exact string matching
-- Cosine similarity to find near-duplicate questions
-- Complexity-based routing so each query goes to a model that fits the task
-- Cost-aware design that tries to keep expensive calls to a minimum
+Most apps send every request to the most powerful (and most expensive) model. A "what is 2+2?" question does not need the same model as "design a distributed rate limiter". LLM Gateway decides automatically:
+
+- **Semantic cache** — return a cached answer for near-duplicate questions at $0 and single-digit ms.
+- **Neural routing** — classify query complexity (1–10) in ~8 ms and route to the cheapest model that can handle it.
+- **BYOK** — each tenant brings their own provider keys, encrypted at rest.
+- **Fallback chain** — if the chosen model fails, retry down the tiers before giving up.
 
 ---
 
-## What it does
+## Features
 
-- Checks if a similar query was already answered using a semantic cache in Redis
-- If not, scores the query complexity from 1–10
-- Routes to the cheapest model that can handle it
-- Falls back to a stronger model if the primary one fails
-- Logs every request to PostgreSQL — model used, tokens, cost, latency
-- Runs a background evaluation loop to check if routing decisions are actually good
-- Uses similarity scoring internally to decide whether a cached answer is close enough
+- Multi-provider support: **Groq, OpenAI, Google Gemini, Anthropic, Together AI**
+- Semantic cache per tenant using embeddings + cosine similarity (per-tier thresholds)
+- Neural complexity classifier (`all-MiniLM-L6-v2` + a small MLP), served via **ONNX Runtime** (no PyTorch at runtime)
+- BYOK provider keys, **Fernet-encrypted at rest**, decrypted only in memory
+- Per-tenant daily budget enforcement (over budget forces the cheapest tier)
+- Cascading model fallback (Complex → Medium → Simple → 502)
+- Background shadow evaluation (boundary scores + 10% sample) for routing quality
+- Real-time analytics: cost, tokens, latency, cache hit rate, model distribution
+- Built-in web dashboard (chat playground, analytics, BYOK settings)
+- Dockerized, non-root container, production security headers
 
 ---
 
@@ -39,351 +38,303 @@ This project sits in front of LLM calls and makes that decision automatically. T
 
 ```text
 User Query
-   → Classifier (score 1–10)
-   → Router (select model)
-   → Cache check (embeddings + cosine similarity)
-   → HIT → return cached response
-   → MISS → call LLM → store → return
+   → Auth (X-Gateway-Key)
+   → Neural Classifier        → complexity score 1–10
+   → Semantic Cache (Redis)   → HIT? return cached ($0, ~20 ms)
+   → Router                   → user's configured model for the tier
+   → LLM Provider (BYOK key)  → with cascading fallback
+   → Store in cache + log to PostgreSQL + shadow-evaluate
 ```
 
 ---
 
-## Verified Results
+## Tech stack
 
-These are real numbers from running the system locally, not estimates.
-
-**Analytics after 7 requests:**
-
-```json
-{
-  "total_requests": 7,
-  "avg_latency_ms": 1582.85,
-  "total_cost_usd": 0.0044,
-  "cache_hit_rate": 42.86,
-  "cost_saved_usd": 0.0024,
-  "cost_saved_percent": 35.55,
-  "total_tokens": 3395
-}
-```
-
-**Benchmark — model distribution:**
-
-```json
-{
-  "total_requests": 7,
-  "model_distribution": {
-    "llama-3.1-8b-instant": {
-      "count": 4,
-      "percentage": 57.14
-    },
-    "openai/gpt-oss-120b": {
-      "count": 3,
-      "percentage": 42.86
-    }
-  },
-  "cache_hit_rate": 42.86,
-  "cost_saved_percent": 35.55
-}
-```
+| Layer | Technology |
+|---|---|
+| API | FastAPI + Uvicorn |
+| Classification | ONNX Runtime + `all-MiniLM-L6-v2` (384-d) + NumPy MLP (384→64→1) |
+| Cache | Redis (cosine similarity over per-tenant embeddings) |
+| Database | PostgreSQL (async SQLAlchemy + asyncpg) |
+| Security | Fernet (AES) key encryption, SHA-256 gateway keys |
+| Packaging | Docker (multi-stage), Docker Compose for local dev |
 
 ---
 
-## Routing in action
+## Quick start (local, Docker)
 
-**Simple query — cache miss (first time):**
-
-Query: `"what is api"`
-
-```json
-{
-  "model_used": "llama-3.1-8b-instant",
-  "tier": "simple",
-  "complexity_score": 2,
-  "cache_hit": false,
-  "latency_ms": 1758.29,
-  "tokens_used": 626,
-  "cost_usd": 0.0000313,
-  "similarity_score": 0
-}
-```
-
-**Semantic cache hit — similar but not identical query:**
-
-Query: `"define api"` — routed to cache because similarity score 0.951 exceeded the simple tier threshold of 0.90
-
-```json
-{
-  "model_used": "llama-3.1-8b-instant",
-  "tier": "simple",
-  "complexity_score": 2,
-  "cache_hit": true,
-  "latency_ms": 24.89,
-  "tokens_used": 0,
-  "cost_usd": 0,
-  "similarity_score": 0.951
-}
-```
-
-Latency dropped from 1758ms to 24ms. Cost dropped to zero.
-
-**Complex query — routed to stronger model:**
-
-Query: `"design a distributed rate limiter system"`
-
-```json
-{
-  "model_used": "openai/gpt-oss-120b",
-  "tier": "complex",
-  "complexity_score": 8,
-  "cache_hit": false,
-  "latency_ms": 2969.25,
-  "tokens_used": 1077,
-  "cost_usd": 0.002154,
-  "similarity_score": 0.037
-}
-```
-
-**Complex query — semantic cache hit:**
-
-Query: `"how would you build a distributed rate limiting system"` — different wording, same intent.Similarity score (0.876) was below the complex tier threshold (0.95), so the request was sent to the LLM just below threshold, so it called the LLM. But on the second attempt with a closer phrasing, similarity hit 1.0 and returned from cache instantly.
-
-```json
-{
-  "model_used": "openai/gpt-oss-120b",
-  "tier": "complex",
-  "complexity_score": 8,
-  "cache_hit": true,
-  "latency_ms": 17.09,
-  "tokens_used": 0,
-  "cost_usd": 0,
-  "similarity_score": 1
-}
-```
----
-## Performance Summary
-
-- Latency reduced from ~1750ms → ~20ms using semantic caching (~100x improvement)
-- Cache hit rate: ~42%
-- Cost reduced by ~35% by avoiding repeated LLM calls
-- Zero-token responses for cached queries
-- Semantic matching allows reuse across differently phrased queries
-
----
-## Demo
-
-### Cache Miss vs Cache Hit
-- First request: ~1758ms
-- Cached request: ~17ms
-![Cache Hit vs Miss](./assets/hit_vs_miss.png)
-
-### Semantic Match
-- "what is api" → "define api"
-- similarity_score: 0.951 → cache hit
-![Semantic Match](./assets/similarity_score.png)
-
-### Analytics
-- Cache hit rate: ~42%
-- Cost saved: ~35%
-![Analytics](./assets/analytics.png)
-![Benchmark](./assets/analytics_benchmark.png)
----
-## Stack
-
-- Python 3.12
-- FastAPI + Uvicorn
-- Groq API (LLaMA 3 models)
-- Redis — semantic cache with cosine similarity
-- PostgreSQL — request logs and analytics
-- Docker Compose — runs FastAPI, Redis, and PostgreSQL together
-
----
-
-## Getting started
-
-You need Docker and a Groq API key.
+You need Docker. No provider key is required globally — keys are added per tenant at runtime.
 
 ```bash
-git clone https://github.com/Akhilesh0605/llm-gateway.git
+git clone https://github.com/<you>/llm-gateway.git
 cd llm-gateway
+
+cp .env.example .env
+# then set ENCRYPTION_KEY (generate below)
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+docker compose up --build
 ```
 
-Create a `.env` file and fill it in:
+App: `http://localhost:8000` (dashboard at `/`, OpenAPI docs at `/docs`).
+
+Local `.env` values used by `docker-compose.yaml`:
 
 ```env
-GROQ_API_KEY=your_key_here
-REDIS_URL=redis://redis:6379
-DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/llmgateway
-DAILY_BUDGET_USD=10.0
+REDIS_SERVER_LINK=redis://redis:6379
+POSTGRESQL_LINK=postgresql+asyncpg://user:password@postgres:5432/llmgateway
+ENCRYPTION_KEY=your-stable-fernet-key
 ```
-
-Start the app through Docker
-```bash
-docker-compose up --build
-```
-App runs on `http://localhost:8000`.
 
 ---
 
-## Sending a query
+## Using the API
+
+### 1. Register and get a gateway key
+
+```bash
+curl -X POST http://localhost:8000/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Akhil", "email": "you@example.com"}'
+# → { "gateway_api_key": "gw_live_..." }  (shown once)
+```
+
+All tenant endpoints require the key as a header: `X-Gateway-Key: gw_live_...`
+
+### 2. Add a provider key (BYOK)
+
+```bash
+curl -X POST http://localhost:8000/v1/providers/add \
+  -H "Content-Type: application/json" -H "X-Gateway-Key: gw_live_..." \
+  -d '{"provider": "groq", "api_key": "gsk_...", "label": "My Groq Key"}'
+```
+
+### 3. Assign models to complexity tiers
+
+```bash
+curl -X PUT http://localhost:8000/v1/tiers/config \
+  -H "Content-Type: application/json" -H "X-Gateway-Key: gw_live_..." \
+  -d '{
+    "simple_provider": "groq",  "simple_model": "openai/gpt-oss-20b",
+    "medium_provider": "groq",  "medium_model": "qwen/qwen3.8-27b",
+    "complex_provider": "groq", "complex_model": "openai/gpt-oss-120b"
+  }'
+```
+
+### 4. Send a query
 
 ```bash
 curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{"query": "what is a binary search tree"}'
+  -H "Content-Type: application/json" -H "X-Gateway-Key: gw_live_..." \
+  -d '{"query": "What is a binary search tree?"}'
 ```
 
 ---
 
-## Endpoints
+## API reference
 
-`POST /query` — send a query, get a response
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `GET` | `/` | no | Web dashboard |
+| `POST` | `/v1/auth/register` | no | Register a tenant, returns a gateway key (once) |
+| `GET` | `/v1/providers` | no | List supported providers |
+| `GET` | `/v1/providers/{provider}/models` | no | Model catalog for a provider |
+| `POST` | `/v1/providers/add` | yes | Add/update an encrypted provider key |
+| `PUT` | `/v1/tiers/config` | yes | Set provider+model per tier |
+| `GET` | `/v1/tiers/config` | yes | Read current tier config |
+| `POST` | `/query` | yes | Classify → cache → route → respond |
+| `GET` | `/analytics` | yes | Aggregated cost/latency/cache metrics |
+| `GET` | `/analytics/benchmark` | yes | Model distribution + cache stats |
+| `GET` | `/health` | no | Liveness + Redis status |
 
-`GET /analytics` — total requests, cost saved, cache hit rate
+`/query` response shape:
 
-`GET /analytics/benchmark` — routing accuracy, model distribution, evaluation loop results
-
-`GET /health` — check if Redis and Postgres are reachable
+```json
+{
+  "request_id": "uuid",
+  "response": "…",
+  "provider": "groq",
+  "model_used": "openai/gpt-oss-20b",
+  "tier": "simple",
+  "complexity_score": 2,
+  "cache_hit": false,
+  "latency_ms": 912.4,
+  "tokens_used": 431,
+  "cost_usd": 0.0000806,
+  "similarity_score": 0.0
+}
+```
 
 ---
-## Live Demo
 
-Base URL: https://llm-gateway-04sy.onrender.com
+## Routing & classification
 
-Try:
-- /docs
-- /query
-- /analytics
-- /analytics/benchmark
+Every query is embedded once with `all-MiniLM-L6-v2`; a 384→64→1 MLP scores complexity from 1 to 10:
 
----
+| Score | Tier | Typical queries |
+|---|---|---|
+| 1–3 | `simple` | greetings, arithmetic, lookups |
+| 4–6 | `medium` | code generation, comparisons, summarization |
+| 7–10 | `complex` | system design, distributed systems, deep reasoning |
 
-## How routing works
+The tier maps to **your** configured provider/model. If a call fails, the gateway falls back down the chain (Complex → Medium → Simple). If the daily budget is exceeded, everything routes to the Simple tier.
 
-Every query gets a complexity score from 1 to 10 based on token count, structure, and keywords. That score maps to a model:
-
-| Score | Model |
-|---|---|
-| 1–3 | llama-3.1-8b-instant |
-| 4–6 | llama-3.3-70b-versatile |
-| 7–10 | openai/gpt-oss-120b |
-
-If the routed model fails, it tries the next one up. If the daily budget is exceeded, everything routes to the cheapest model until midnight.
+The classifier runs locally via **ONNX Runtime** — no network, no LLM, deterministic.
 
 ---
 
 ## Semantic cache
 
-Queries are converted to embeddings using `sentence-transformers`. On each new request, the embedding is compared against everything in Redis using cosine similarity. If the score is above the threshold, the cached response is returned — usually in under 50ms.
+- Per-tenant embeddings stored in Redis; matched by cosine similarity.
+- Thresholds are stricter for harder queries (a near-match on a factual question is safe; on a reasoning task it is not).
 
-Thresholds are per complexity tier because a near-match on a simple factual question is fine, but a near-match on a complex reasoning task might not be close enough.
-
-| Tier | Threshold | TTL |
+| Tier | Similarity threshold | TTL |
 |---|---|---|
-| Simple | 0.90 | 2 hours |
-| Medium | 0.92 | 1 hour |
-| Complex | 0.95 | 30 minutes |
+| Simple | 0.90 | 2 h |
+| Medium | 0.92 | 1 h |
+| Complex | 0.95 | 30 min |
 
----
-## Architecture
-    ┌──────────────┐
-    │   User Query │
-    └──────┬───────┘
-           ↓
-    ┌──────────────┐
-    │ Classifier   │  → complexity score (1–10)
-    └──────┬───────┘
-           ↓
-    ┌──────────────┐
-    │ Router       │  → selects model
-    └──────┬───────┘
-           ↓
-    ┌──────────────┐
-    │ Cache (Redis)│  → embeddings + cosine similarity
-    └──────┬───────┘
-     HIT   ↓   MISS
-    ┌──────────────┐
-    │ Return       │
-    │ Cached       │
-    └──────────────┘
-           ↓
-    ┌──────────────┐
-    │ LLM Call     │
-    └──────┬───────┘
-           ↓
-    ┌──────────────┐
-    │ Store Cache  │
-    └──────────────┘
+- Cache hits return in ~20 ms at **$0.00** cost and log zero tokens.
 
 ---
 
-## Evaluation loop
+## Verified performance
 
-About 10% of requests — and anything that scores right on a routing boundary (3 or 6) — get sent to both the routed model and the strongest model. The outputs are compared with cosine similarity and logged.
+Real measurements from local runs:
 
-Over time this shows whether the routing thresholds are actually working, and where the cheap model starts to fall short.
+| Metric | Value |
+|---|---|
+| Classifier latency (ONNX, avg) | **~7.6 ms** |
+| Cache-hit response | **~20 ms** |
+| Cache speedup vs LLM call | **up to ~32x** |
+| Cost saved (example workload) | **~35–90%** |
+| Runtime memory (peak RSS) | **~269 MB** |
+| Docker image size | **~928 MB** |
+| E2E suite | **8/8 passing** |
 
----
-
-## Project structure
-
-```
-llm-gateway/
-├── app/
-│   ├── main.py        # FastAPI app, query flow, and endpoints
-│   ├── config.py      # Environment settings and model thresholds
-│   ├── models.py      # Request/response schemas and routing types
-│   ├── classifier.py  # Complexity scoring logic
-│   ├── router.py      # Model selection and budget checks
-│   ├── cache.py       # Semantic cache lookup and storage
-│   ├── analytics.py   # Request logging and analytics queries
-│   ├── llm_client.py  # LLM API calls and fallback handling
-│   └── evaluation.py  # Shadow evaluation and agreement scoring
-├── docker-compose.yaml
-├── init_db.py
-├── requirements.txt
-├── assets/ # Screenshots used in README (cache hits, analytics, etc.)
-├── docs/ # Additional documentation (performance report PDF)
-│   └── performance-report.pdf
-└── README.md
-```
-
----
-## Key Features
-
-- Semantic caching using embeddings (not exact match)
-- Dynamic model routing based on query complexity
-- Cost-aware LLM usage with budget control
-- Automatic fallback to stronger models
-- Background evaluation loop for routing accuracy
-- Real-time analytics (latency, cost, cache hits)
-
----
-
-## Future Improvements
-
-- Add a vector database such as FAISS or Pinecone for larger cache lookups
-- Build a simple frontend UI for testing and viewing results
-- Add rate limiting to control abuse and keep costs predictable
-- Support multi-provider routing beyond the current Groq setup
+> The classifier pairs a pre-trained `all-MiniLM-L6-v2` encoder with a small MLP trained on a labeled query corpus (see `train_classifier.py`). Training data is not committed; the pipeline scripts are.
 
 ---
 
 ## Configuration
 
-| Variable | Default | What it does |
-|---|---|---|
-| `GROQ_API_KEY` | — | Groq API key |
-| `DAILY_BUDGET_USD` | 10.0 | Hard cap on daily spend |
-| `SIMILARITY_THRESHOLD_SIMPLE` | 0.90 | Cache match strictness for simple queries |
-| `SIMILARITY_THRESHOLD_MEDIUM` | 0.92 | Cache match strictness for medium queries |
-| `SIMILARITY_THRESHOLD_COMPLEX` | 0.95 | Cache match strictness for complex queries |
-| `EVALUATION_LOOP_RATE` | 0.10 | How often to run shadow evaluation |
-| `CACHE_TTL_SIMPLE` | 7200 | Cache lifetime in seconds |
-| `CACHE_TTL_MEDIUM` | 3600 | Cache lifetime in seconds |
-| `CACHE_TTL_COMPLEX` | 1800 | Cache lifetime in seconds |
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `REDIS_SERVER_LINK` | yes | — | Redis URL (`rediss://…` for TLS) |
+| `POSTGRESQL_LINK` | yes | — | Async Postgres URL (`asyncpg`) |
+| `ENCRYPTION_KEY` | yes | — | Fernet key for BYOK encryption (**must stay constant**) |
+| `SIMILARITY_THRESHOLD_SIMPLE` | no | 0.90 | Cache strictness (simple) |
+| `SIMILARITY_THRESHOLD_MEDIUM` | no | 0.92 | Cache strictness (medium) |
+| `SIMILARITY_THRESHOLD_COMPLEX` | no | 0.95 | Cache strictness (complex) |
+| `CACHE_TTL_SIMPLE` | no | 7200 | Cache TTL seconds (simple) |
+| `CACHE_TTL_MEDIUM` | no | 3600 | Cache TTL seconds (medium) |
+| `CACHE_TTL_COMPLEX` | no | 1800 | Cache TTL seconds (complex) |
+| `DAILY_BUDGET_USD` | no | 10.0 | Default daily budget for new tenants |
+| `EVALUATION_LOOP_RATE` | no | 0.10 | Share of requests sent to shadow evaluation |
+
+> ⚠️ `ENCRYPTION_KEY` must not change after data exists, or stored provider keys become undecryptable.
 
 ---
 
-## Notes
+## Deployment (free tier)
 
-This project focuses on optimizing LLM usage in real-world scenarios by combining routing, caching, and cost-awareness into a single system. All metrics shown in this README are from actual test runs, not simulated data.
+The app runs as a single stateless container; Postgres and Redis are external managed services.
+
+| Component | Service | Notes |
+|---|---|---|
+| App | Render (Docker) | Free 512 MB; keep-awake via uptime ping |
+| Postgres | Neon | Use `?ssl=require` (asyncpg, **not** `sslmode`) |
+| Redis | Upstash | Use the `rediss://` TLS endpoint |
+
+Render environment variables:
+
+```env
+POSTGRESQL_LINK=postgresql+asyncpg://<user>:<pass>@<neon-host>/<db>?ssl=require
+REDIS_SERVER_LINK=rediss://default:<pass>@<upstash-host>:6379
+ENCRYPTION_KEY=<stable-fernet-key>
+```
+
+Notes:
+- Do **not** set `PORT` — the container binds to the platform-provided `PORT` automatically.
+- Health check path: `/health`.
+- Free services sleep; a 5-minute uptime monitor on `/health` keeps Render awake within its monthly quota.
+
+---
+
+## Project structure
+
+```text
+llm-gateway/
+├── app/
+│   ├── main.py            # FastAPI app, endpoints, query pipeline
+│   ├── config.py          # Environment settings
+│   ├── models.py          # SQLAlchemy models + Pydantic schemas
+│   ├── auth.py            # X-Gateway-Key auth dependency
+│   ├── security.py        # Key generation + Fernet encryption
+│   ├── classifier.py      # ONNX embedder + NumPy MLP (complexity scoring)
+│   ├── router.py          # Tier → model resolution + fallback + budget
+│   ├── cache.py           # Semantic cache (Redis + cosine similarity)
+│   ├── llm_client.py      # Multi-provider async client + model registry
+│   ├── analytics.py       # Request logging + aggregation
+│   ├── evaluation.py      # Background shadow evaluation
+│   ├── classifier_mlp.pth # Trained MLP weights (converted at build time)
+│   └── templates/
+│       └── dashboard.html # Single-file dashboard (Tailwind + Chart.js)
+├── scripts/
+│   └── export_onnx.py     # Build-time ONNX export (runs in builder stage)
+├── test_e2e.py            # End-to-end API test suite (8 checks)
+├── benchmark.py           # Latency/cost benchmark across all tiers
+├── Dockerfile             # Multi-stage build (torch only in builder)
+├── docker-compose.yaml    # Local app + Redis + Postgres
+├── requirements.txt       # Runtime dependencies
+├── requirements-train.txt # Training-only dependencies (torch, sentence-transformers)
+├── .env.example           # Environment template
+└── Readme.md
+```
+
+---
+
+## Testing
+
+```bash
+# With the app running on http://localhost:8000
+GROQ_API_KEY=gsk_... python test_e2e.py   # 8 automated checks
+GROQ_API_KEY=gsk_... python benchmark.py # latency/cost benchmark
+```
+
+---
+
+## Security
+
+- Provider keys are **Fernet-encrypted at rest**; decrypted only in-process.
+- Gateway keys are stored **hashed**; the raw key is shown only once at registration.
+- Container runs as a **non-root** user.
+- Baseline security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, HSTS over TLS).
+- Provider errors are logged server-side; API responses do not leak upstream internals.
+- `.env` and generated model artifacts are git-ignored.
+
+---
+
+## Retraining the classifier
+
+```bash
+pip install -r requirements-train.txt
+python train_classifier.py     # produces app/classifier_mlp.pth
+```
+
+The Docker build converts the `.pth` to `.npz` and exports the embedder to ONNX automatically — no PyTorch is shipped in the runtime image.
+
+---
+
+## Roadmap
+
+- Vector index (FAISS/pgvector) for larger caches
+- Per-tenant rate limiting
+- More granular cost dashboards
+- Streaming responses
+
+---
+
+## License
+
+Add a license (e.g., MIT) before publishing if you intend others to reuse this.

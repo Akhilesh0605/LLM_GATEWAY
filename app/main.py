@@ -12,6 +12,8 @@ from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, status
+from fastapi.responses import HTMLResponse
+from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -70,6 +72,32 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    """Baseline security headers for the public deployment."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    # Only advertise HSTS when the request actually arrived over TLS (Render terminates TLS).
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_dashboard():
+    """Serves the Helicone-inspired Interactive Web Dashboard & Chat Playground."""
+    dashboard_path = Path(__file__).parent / "templates" / "dashboard.html"
+    if dashboard_path.exists():
+        return HTMLResponse(content=dashboard_path.read_text(encoding="utf-8"))
+    return HTMLResponse(
+        content="<h1>Dashboard file not found in app/templates/dashboard.html</h1>",
+        status_code=404,
+    )
 
 # ============================================================================
 # 1. ONBOARDING & PROFILE ENDPOINTS
@@ -351,6 +379,7 @@ async def handle_query(
     background_tasks.add_task(
         run_evaluation,
         request_id=request_id,
+        user_id=user.id,
         query=request.query,
         routed_model=result["model_used"],
         complexity_score=complexity_score,

@@ -1,20 +1,60 @@
-**/.git
-**/.gitignore
-**/.venv
-**/venv
-**/env
-**/llm-gateway
-**/__pycache__
-**/*.pyc
-**/*.pyo
-**/*.pyd
-**/.pytest_cache
-**/.cache
-assets/
-docs/
-*.md
+# ============================================================
+# Secrets / environment
+# ============================================================
 .env
+.env.*
+!.env.example
 
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ============================================================
+# Virtual environments
+# ============================================================
+.venv/
+venv/
+env/
+ENV/
+llm-gateway/
+
+# ============================================================
+# Generated model artifacts (built inside Docker, not committed)
+# ============================================================
+app/onnx_embedder/
+app/classifier_mlp.npz
+
+# ============================================================
+# README screenshots (stale; regenerate from the live dashboard)
+# ============================================================
+assets/
+
+# ============================================================
+# Training data & pipeline output (large, regenerable)
+# ============================================================
+data/
+corpus_labeled.jsonl
+merged_corpus.jsonl
+label_checkpoint.json
 label_failures.jsonl
 
-label_checkpoint.json
+# ============================================================
+# OS / editors / logs
+# ============================================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Gateway | Cost-Aware AI Proxy</title>
+  <meta name="description" content="Reduce LLM latency by up to 32x and cut API spend by 35%–90% through neural routing and semantic caching.">
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="%233B82F6"/><text x="16" y="22" font-size="13" text-anchor="middle" fill="white" font-family="sans-serif" font-weight="bold">LG</text></svg>'>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 400: '#60A5FA', 500: '#3B82F6', 600: '#2563EB', 700: '#1D4ED8' },
+            darkbg: '#0B0F19',
+            darkcard: '#111827',
+            darkborder: '#1F2937'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+    .dark ::-webkit-scrollbar-thumb { background: #1F2937; }
+
+    /* ---- Theme transition (applies to ALL elements) ---- */
+    html.theme-transition, html.theme-transition *,
+    html.theme-transition *::before, html.theme-transition *::after {
+      transition: background-color .3s ease, border-color .3s ease,
+                  color .3s ease, fill .3s ease, stroke .3s ease, box-shadow .3s ease !important;
+    }
+
+    /* ---- Generic reveal / rise ---- */
+    @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+    .rise { animation: rise .55s cubic-bezier(.2,.7,.2,1) both; animation-delay: var(--d, 0ms); }
+
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .view-section.view-enter { animation: fadeUp .3s ease-out both; }
+
+    /* ---- Chat bubbles ---- */
+    @keyframes slideLeft  { from { opacity: 0; transform: translateX(-24px) scale(.98); } to { opacity: 1; transform: none; } }
+    @keyframes slideRight { from { opacity: 0; transform: translateX(24px)  scale(.98); } to { opacity: 1; transform: none; } }
+    .msg-assistant { animation: slideLeft .4s cubic-bezier(.2,.9,.3,1.25) both; }
+    .msg-user      { animation: slideRight .4s cubic-bezier(.2,.9,.3,1.25) both; }
+
+    /* ---- Badge pop ---- */
+    @keyframes popIn { 0% { opacity: 0; transform: scale(.8); } 60% { transform: scale(1.06); } 100% { opacity: 1; transform: scale(1); } }
+    .badge-pop { animation: popIn .3s ease-out both; animation-delay: var(--d, 0ms); }
+
+    /* ---- Bouncing dots loader ---- */
+    @keyframes bounceDot { 0%, 80%, 100% { transform: translateY(0); opacity: .35; } 40% { transform: translateY(-5px); opacity: 1; } }
+    .dot { width: 6px; height: 6px; border-radius: 9999px; background: currentColor; display: inline-block; animation: bounceDot 1.2s infinite; }
+    .dot:nth-child(2) { animation-delay: .15s; }
+    .dot:nth-child(3) { animation-delay: .3s; }
+
+    /* ---- Card hover ---- */
+    .card-hover { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+    .card-hover:hover { transform: scale(1.02); box-shadow: 0 14px 34px -16px rgba(0,0,0,.45); }
+
+    /* ---- Animated mesh gradient hero ---- */
+    .mesh {
+      background:
+        radial-gradient(40% 55% at 15% 25%, rgba(59,130,246,.30) 0%, transparent 60%),
+        radial-gradient(35% 50% at 85% 20%, rgba(99,102,241,.28) 0%, transparent 60%),
+        radial-gradient(45% 55% at 50% 90%, rgba(16,185,129,.20) 0%, transparent 62%);
+      background-size: 180% 180%;
+      animation: meshMove 20s ease-in-out infinite;
+    }
+    @keyframes meshMove { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+    /* ---- Architecture flow ---- */
+    .flow-line { stroke-dasharray: 5 5; animation: dashFlow 1s linear infinite; }
+    @keyframes dashFlow { to { stroke-dashoffset: -20; } }
+    @keyframes nodePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,.45); } 50% { box-shadow: 0 0 0 8px rgba(59,130,246,0); } }
+    .node-glow { animation: nodePulse 2.4s ease-out infinite; }
+
+    /* ---- Typewriter cursor ---- */
+    .tw::after { content: '▋'; margin-left: 1px; animation: blink 1s step-end infinite; color: #3B82F6; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* ---- Navbar sliding underline ---- */
+    #nav-underline {
+      position: absolute; bottom: -1px; height: 2px; border-radius: 2px;
+      background: linear-gradient(90deg, #3B82F6, #6366F1);
+      transition: left .3s cubic-bezier(.2,.8,.2,1), width .3s cubic-bezier(.2,.8,.2,1), opacity .2s;
+      opacity: 0;
+    }
+
+    /* ---- Grain/noise overlay ---- */
+    .noise-overlay {
+      position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: .035; mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    /* ---- Toast ---- */
+    @keyframes toastIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+    .toast { animation: toastIn .28s cubic-bezier(.2,.9,.3,1.2) both; }
+    @keyframes toastOut { to { opacity: 0; transform: translateX(24px); } }
+    .toast.leaving { animation: toastOut .25s ease-in forwards; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-darkbg dark:text-slate-100 min-h-screen flex flex-col font-sans">
+
+  <!-- Grain texture (dark mode only) -->
+  <div class="noise-overlay hidden dark:block" aria-hidden="true"></div>
+
+  <!-- ===================================================================== -->
+  <!-- TOP NAVIGATION BAR (glassmorphism)                                    -->
+  <!-- ===================================================================== -->
+  <header class="sticky top-0 z-50 border-b border-slate-200/50 dark:border-darkborder/50 bg-white/70 dark:bg-darkbg/70 backdrop-blur-xl">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+
+      <!-- Brand Logo -->
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="switchView('landing')">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center shadow-md shadow-brand-500/20 text-white font-bold card-hover">
+          <i data-lucide="route" class="w-5 h-5"></i>
+        </div>
+        <div class="flex flex-col leading-tight min-w-0">
+          <span class="font-bold text-lg tracking-tight bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400 bg-clip-text text-transparent">
+            LLM Gateway <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-500 border border-brand-500/20">Gateway</span>
+          </span>
+          <span class="hidden lg:block max-w-[26rem] truncate text-[10px] font-normal text-slate-500 dark:text-slate-400">Reduce LLM latency by up to 32x and cut API spend by 35%–90% through neural routing and semantic caching.</span>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs (desktop) -->
+      <nav id="nav-tabs" class="hidden md:flex items-center space-x-1 relative">
+        <button onclick="switchView('landing')" class="nav-btn px-3 py-1.5 rounded-md text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-brand-500 dark:hover:text-brand-400 transition-colors" data-view="landing">Home</button>
+        <button onclick="switchView('chat')" class="nav-btn px-3 py-1.5 rounded-md text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-brand-500 dark:hover:text-brand-400 transition-colors" data-view="chat">Playground</button>
+        <button onclick="switchView('analytics')" class="nav-btn px-3 py-1.5 rounded-md text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-brand-500 dark:hover:text-brand-400 transition-colors" data-view="analytics">Analytics</button>
+        <button onclick="switchView('settings')" class="nav-btn px-3 py-1.5 rounded-md text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-brand-500 dark:hover:text-brand-400 transition-colors" data-view="settings">BYOK Keys</button>
+        <span id="nav-underline"></span>
+      </nav>
+
+      <!-- Right Actions -->
+      <div class="flex items-center space-x-2 sm:space-x-3">
+        <button onclick="toggleTheme()" class="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" title="Toggle Theme">
+          <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+          <i data-lucide="moon" class="w-5 h-5 block dark:hidden"></i>
+        </button>
+
+        <div id="auth-status-container"></div>
+
+        <!-- Mobile menu button -->
+        <button onclick="toggleMobileNav()" class="md:hidden p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <i data-lucide="menu" class="w-5 h-5"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile nav -->
+    <div id="mobile-nav" class="md:hidden hidden border-t border-slate-200/50 dark:border-darkborder/50 px-4 py-2 bg-white/90 dark:bg-darkbg/90 backdrop-blur-xl">
+      <div class="flex flex-col text-sm">
+        <button onclick="switchView('landing');toggleMobileNav()" class="text-left px-2 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800">Home</button>
+        <button onclick="switchView('chat');toggleMobileNav()" class="text-left px-2 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800">Playground</button>
+        <button onclick="switchView('analytics');toggleMobileNav()" class="text-left px-2 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800">Analytics</button>
+        <button onclick="switchView('settings');toggleMobileNav()" class="text-left px-2 py-2 rounded hover:bg-slate-100 dark:hover:bg-slate-800">BYOK Keys</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <!-- MAIN CONTENT                                                          -->
+  <!-- ===================================================================== -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 relative z-10">
+
+    <!-- ───────────────────────────── VIEW 1: LANDING ───────────────────── -->
+    <section id="view-landing" class="view-section space-y-12 py-6">
+
+      <!-- Hero with animated mesh gradient -->
+      <div class="mesh rounded-2xl border border-slate-200/50 dark:border-darkborder/50 px-6 py-12 sm:py-16 text-center space-y-4 max-w-4xl mx-auto rise">
+        <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full text-xs font-semibold bg-brand-500/10 text-brand-600 dark:text-brand-400 border border-brand-500/20">
+          <span class="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse"></span>
+          <span>Multi-Provider AI Gateway with Semantic Caching</span>
+        </div>
+        <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight">
+          Cut LLM Costs by <span class="bg-gradient-to-r from-brand-500 to-indigo-500 bg-clip-text text-transparent">90%</span> With Neural Semantic Routing
+        </h1>
+        <p class="text-lg text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+          Reduce LLM latency by up to 32x and cut API spend by 35%–90% through neural routing and semantic caching.
+        </p>
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 pt-4">
+          <button onclick="switchView('chat')" class="w-full sm:w-auto px-6 py-3 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium shadow-md shadow-brand-500/25 transition-colors card-hover">
+            Launch Playground
+          </button>
+          <button onclick="switchView('settings')" class="w-full sm:w-auto px-6 py-3 rounded-lg border border-slate-300/50 dark:border-darkborder/50 bg-white dark:bg-darkcard font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors card-hover">
+            Configure BYOK Keys
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI cards + sparklines -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="rise p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur card-hover" style="--d:60ms">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Cache Speedup</span>
+          <div class="text-2xl font-bold text-brand-600 dark:text-brand-400 mt-1">31.8x Faster</div>
+          <span class="text-xs text-slate-500">56.9ms vs 1,811ms average</span>
+          <svg viewBox="0 0 100 24" class="w-full h-6 mt-3 text-brand-500" fill="none" preserveAspectRatio="none">
+            <polyline points="0,20 15,17 30,18 45,10 60,12 75,5 100,2" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke">
+              <animate attributeName="stroke-dasharray" from="0,200" to="200,0" dur="1.4s" fill="freeze" />
+            </polyline>
+          </svg>
+        </div>
+        <div class="rise p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur card-hover" style="--d:120ms">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Cost Reduction</span>
+          <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">90% Saved</div>
+          <span class="text-xs text-slate-500">Tiered model dispatch</span>
+          <svg viewBox="0 0 100 24" class="w-full h-6 mt-3 text-emerald-500" fill="none" preserveAspectRatio="none">
+            <polyline points="0,4 15,8 30,7 45,12 60,15 75,18 100,21" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke">
+              <animate attributeName="stroke-dasharray" from="0,200" to="200,0" dur="1.4s" fill="freeze" />
+            </polyline>
+          </svg>
+        </div>
+        <div class="rise p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur card-hover" style="--d:180ms">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Classifier SLA</span>
+          <div class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">&lt; 0.5ms</div>
+          <span class="text-xs text-slate-500">PyTorch MLP on CPU</span>
+          <svg viewBox="0 0 100 24" class="w-full h-6 mt-3 text-indigo-500" fill="none" preserveAspectRatio="none">
+            <polyline points="0,12 20,11 40,13 60,10 80,12 100,11" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke">
+              <animate attributeName="stroke-dasharray" from="0,200" to="200,0" dur="1.4s" fill="freeze" />
+            </polyline>
+          </svg>
+        </div>
+        <div class="rise p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur card-hover" style="--d:240ms">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Complex Precision</span>
+          <div class="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1">100.0%</div>
+          <span class="text-xs text-slate-500">0 simple queries sent to the largest tier</span>
+          <svg viewBox="0 0 100 24" class="w-full h-6 mt-3 text-amber-500" fill="none" preserveAspectRatio="none">
+            <polyline points="0,20 25,16 50,14 75,8 100,6" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke">
+              <animate attributeName="stroke-dasharray" from="0,200" to="200,0" dur="1.4s" fill="freeze" />
+            </polyline>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Architecture flow diagram -->
+      <div class="rise rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur p-6 shadow-sm" style="--d:300ms">
+        <h3 class="text-lg font-bold mb-6 text-center">Request Lifecycle</h3>
+        <div class="flex flex-col lg:flex-row items-center justify-between gap-2 lg:gap-0">
+          <!-- nodes injected by buildArchitectureFlow() -->
+          <div id="arch-flow" class="flex flex-col lg:flex-row items-center justify-between w-full gap-3 lg:gap-0"></div>
+        </div>
+      </div>
+
+      <!-- How it works -->
+      <div class="space-y-4">
+        <h3 class="text-xl font-bold text-center">How it works</h3>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 text-sm">
+          <div class="step-card opacity-0 translate-y-4 transition-all duration-700 p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur card-hover">
+            <div class="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center font-bold mb-2">1</div>
+            <h4 class="font-semibold">Tenant Auth</h4>
+            <p class="text-slate-500">Validates SHA-256 gateway keys and isolates Redis/PostgreSQL tenant scopes.</p>
+          </div>
+          <div class="step-card opacity-0 translate-y-4 transition-all duration-700 p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur card-hover">
+            <div class="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold mb-2">2</div>
+            <h4 class="font-semibold">Semantic Cache</h4>
+            <p class="text-slate-500">Cosine similarity over the tenant's cached embeddings. Near-instant hits at $0.</p>
+          </div>
+          <div class="step-card opacity-0 translate-y-4 transition-all duration-700 p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur card-hover">
+            <div class="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold mb-2">3</div>
+            <h4 class="font-semibold">Neural Routing</h4>
+            <p class="text-slate-500">Predicts complexity (1-10), then routes to the user's configured Simple / Medium / Complex model.</p>
+          </div>
+          <div class="step-card opacity-0 translate-y-4 transition-all duration-700 p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur card-hover">
+            <div class="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center font-bold mb-2">4</div>
+            <h4 class="font-semibold">Universal BYOK</h4>
+            <p class="text-slate-500">Decrypts provider keys in-memory and calls the selected provider with a cascading fallback chain.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────── VIEW 2: AUTH ──────────────────────── -->
+    <section id="view-auth" class="view-section hidden max-w-md mx-auto py-12">
+      <div class="rise rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur p-8 shadow-md">
+        <h2 class="text-2xl font-bold text-center mb-2">Gateway Authentication</h2>
+        <p class="text-sm text-slate-500 text-center mb-6">Create a tenant profile or enter your existing Gateway API Key.</p>
+
+        <div class="flex border-b border-slate-200/50 dark:border-darkborder/50 mb-6">
+          <button id="auth-tab-reg" onclick="setAuthTab('register')" class="flex-1 pb-3 text-sm font-semibold border-b-2 border-brand-500 text-brand-600 dark:text-brand-400 transition-colors">Register</button>
+          <button id="auth-tab-login" onclick="setAuthTab('login')" class="flex-1 pb-3 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">Sign In</button>
+        </div>
+
+        <form id="form-register" onsubmit="handleRegister(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase mb-1">Full Name</label>
+            <input type="text" id="reg-name" required placeholder="Your name" class="w-full px-3 py-2 rounded-lg border border-slate-300/50 dark:border-darkborder/50 bg-slate-50 dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase mb-1">Email Address</label>
+            <input type="email" id="reg-email" required placeholder="you@example.com" class="w-full px-3 py-2 rounded-lg border border-slate-300/50 dark:border-darkborder/50 bg-slate-50 dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <button type="submit" class="w-full py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm transition-colors card-hover">Generate Gateway Key</button>
+        </form>
+
+        <form id="form-login" onsubmit="handleLogin(event)" class="space-y-4 hidden">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase mb-1">X-Gateway-Key</label>
+            <input type="password" id="login-key" required placeholder="gw_live_..." class="w-full px-3 py-2 rounded-lg border border-slate-300/50 dark:border-darkborder/50 bg-slate-50 dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          </div>
+          <button type="submit" class="w-full py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm transition-colors card-hover">Authenticate</button>
+        </form>
+
+        <div id="key-modal" class="mt-6 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm hidden">
+          <p class="font-semibold text-emerald-600 dark:text-emerald-400 mb-1">🎉 Key Issued Successfully!</p>
+          <p class="text-xs text-slate-500 mb-2">Save this key now. It will never be shown again.</p>
+          <div class="flex items-center space-x-2">
+            <input type="text" id="issued-key-text" readonly class="flex-1 px-2 py-1 bg-white dark:bg-slate-900 border border-emerald-500/30 rounded text-xs font-mono">
+            <button onclick="copyIssuedKey()" class="px-3 py-1 rounded bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors">Copy</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────── VIEW 3: CHAT ──────────────────────── -->
+    <section id="view-chat" class="view-section hidden space-y-4 max-w-4xl mx-auto h-[calc(100vh-8rem)] flex flex-col">
+      <div class="flex items-center justify-between p-3 rounded-lg border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur text-xs">
+        <div class="flex items-center space-x-3 text-slate-500 min-w-0">
+          <span class="flex items-center shrink-0"><span class="w-2 h-2 rounded-full bg-emerald-500 mr-1.5"></span> Gateway Online</span>
+          <span class="hidden sm:inline">|</span>
+          <span class="hidden sm:inline truncate" id="chat-tier-banner">Loading Tier Config...</span>
+        </div>
+        <button onclick="clearChat()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors shrink-0">Clear Chat</button>
+      </div>
+
+      <div id="chat-stream" class="flex-1 overflow-y-auto space-y-4 p-4 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur shadow-inner">
+        <div id="chat-empty" class="h-full flex flex-col items-center justify-center text-center text-slate-400 space-y-4">
+          <div class="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+            <i data-lucide="message-square" class="w-6 h-6 text-brand-500"></i>
+          </div>
+          <div>
+            <p class="font-semibold text-slate-700 dark:text-slate-300">LLM Gateway Playground</p>
+            <p class="text-xs">Type any simple, medium, or complex question to test live classification, caching, and model routing.</p>
+          </div>
+          <div class="flex flex-wrap gap-2 justify-center max-w-md pt-2">
+            <button onclick="useSuggestion(this)" class="suggestion-chip px-3 py-1.5 rounded-full text-xs border border-slate-300/50 dark:border-darkborder/50 hover:bg-brand-500/10 hover:text-brand-500 hover:border-brand-500/40 transition-all card-hover">What is 2+2?</button>
+            <button onclick="useSuggestion(this)" class="suggestion-chip px-3 py-1.5 rounded-full text-xs border border-slate-300/50 dark:border-darkborder/50 hover:bg-brand-500/10 hover:text-brand-500 hover:border-brand-500/40 transition-all card-hover">Design a rate limiter</button>
+            <button onclick="useSuggestion(this)" class="suggestion-chip px-3 py-1.5 rounded-full text-xs border border-slate-300/50 dark:border-darkborder/50 hover:bg-brand-500/10 hover:text-brand-500 hover:border-brand-500/40 transition-all card-hover">Explain Paxos vs Raft</button>
+          </div>
+        </div>
+      </div>
+
+      <form onsubmit="handleSendQuery(event)" class="relative flex items-center">
+        <input type="text" id="query-input" placeholder="Ask anything (e.g. 'What is 15*24?' or 'Architect a 100k RPS rate limiter')..." required class="w-full px-4 py-3.5 pr-24 rounded-xl border border-slate-300/50 dark:border-darkborder/50 bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm">
+        <button type="submit" id="query-submit-btn" class="absolute right-2 px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-xs shadow-sm transition-colors flex items-center space-x-1 card-hover">
+          <span>Send</span>
+          <i data-lucide="send" class="w-3.5 h-3.5"></i>
+        </button>
+      </form>
+    </section>
+
+    <!-- ───────────────────────────── VIEW 4: ANALYTICS ─────────────────── -->
+    <section id="view-analytics" class="view-section hidden space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-2xl font-bold">Analytics &amp; Performance</h2>
+          <p class="text-sm text-slate-500">Live telemetry, semantic cache savings, and model distribution.</p>
+        </div>
+        <button onclick="loadAnalyticsData()" class="p-2 rounded-lg border border-slate-200/50 dark:border-darkborder/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors card-hover" title="Refresh Analytics">
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="rise p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur shadow-sm card-hover" style="--d:40ms">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Requests</span>
+          <div class="flex items-baseline gap-2">
+            <div id="stat-total-requests" class="text-3xl font-extrabold mt-1" data-count="0">0</div>
+            <span id="trend-total-requests" class="text-xs font-semibold text-slate-400"></span>
+          </div>
+          <span class="text-xs text-slate-500" id="stat-total-tokens">-- tokens processed</span>
+        </div>
+        <div class="rise p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur shadow-sm card-hover" style="--d:100ms">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Cache Hit Rate</span>
+          <div class="flex items-baseline gap-2">
+            <div id="stat-cache-hit-rate" class="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1" data-count="0" data-suffix="%">0%</div>
+            <span id="trend-cache-hit-rate" class="text-xs font-semibold text-slate-400"></span>
+          </div>
+          <span class="text-xs text-slate-500">Zero-cost semantic hits</span>
+        </div>
+        <div class="rise p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur shadow-sm card-hover" style="--d:160ms">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Cost Saved</span>
+          <div class="flex items-baseline gap-2">
+            <div id="stat-cost-saved" class="text-3xl font-extrabold text-brand-600 dark:text-brand-400 mt-1" data-count="0" data-prefix="$" data-decimals="4">$0.0000</div>
+            <span id="trend-cost-saved" class="text-xs font-semibold text-slate-400"></span>
+          </div>
+          <span class="text-xs text-slate-500" id="stat-cost-saved-pct">--% savings vs baseline</span>
+        </div>
+        <div class="rise p-5 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur shadow-sm card-hover" style="--d:220ms">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Average Latency</span>
+          <div class="flex items-baseline gap-2">
+            <div id="stat-avg-latency" class="text-3xl font-extrabold mt-1" data-count="0" data-suffix=" ms" data-decimals="1">0 ms</div>
+            <span id="trend-avg-latency" class="text-xs font-semibold text-slate-400"></span>
+          </div>
+          <span class="text-xs text-slate-500">Including cache hits</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="rise p-6 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur shadow-sm card-hover" style="--d:260ms">
+          <h3 class="text-base font-bold mb-4">Model Routing Distribution</h3>
+          <div class="h-64 flex items-center justify-center">
+            <canvas id="chart-model-dist"></canvas>
+          </div>
+        </div>
+        <div class="rise p-6 rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur shadow-sm card-hover" style="--d:320ms">
+          <h3 class="text-base font-bold mb-4">Cache Performance Breakdown</h3>
+          <div class="h-64 flex items-center justify-center">
+            <canvas id="chart-cache-dist"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Requests -->
+      <div class="rise rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur shadow-sm overflow-hidden" style="--d:360ms">
+        <div class="flex items-center justify-between p-4 border-b border-slate-200/50 dark:border-darkborder/50">
+          <h3 class="text-base font-bold">Recent Requests</h3>
+          <span class="text-xs text-slate-500">Last 10 from this browser session</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead class="text-slate-500 uppercase tracking-wider">
+              <tr class="border-b border-slate-200/50 dark:border-darkborder/50">
+                <th class="text-left font-semibold px-4 py-3">Query</th>
+                <th class="text-left font-semibold px-3 py-3">Score</th>
+                <th class="text-left font-semibold px-3 py-3">Tier</th>
+                <th class="text-left font-semibold px-3 py-3">Model</th>
+                <th class="text-left font-semibold px-3 py-3">Latency</th>
+                <th class="text-left font-semibold px-3 py-3">Cost</th>
+                <th class="text-left font-semibold px-4 py-3">Cache</th>
+              </tr>
+            </thead>
+            <tbody id="recent-requests-body" class="divide-y divide-slate-200/40 dark:divide-darkborder/40"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────── VIEW 5: SETTINGS ──────────────────── -->
+    <section id="view-settings" class="view-section hidden space-y-8 max-w-4xl mx-auto">
+      <div>
+        <h2 class="text-2xl font-bold">BYOK Keys &amp; Model Routing</h2>
+        <p class="text-sm text-slate-500">Manage encrypted provider credentials and map models to complexity tiers.</p>
+      </div>
+
+      <!-- Active Gateway Key -->
+      <div class="rise rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur p-6 shadow-sm space-y-3" style="--d:40ms">
+        <h3 class="text-base font-bold">Your Gateway Authentication Key</h3>
+        <p class="text-xs text-slate-500">Send this key in your HTTP requests as the <code class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono">X-Gateway-Key</code> header.</p>
+        <div class="flex items-center space-x-3">
+          <input type="password" id="settings-gw-key" readonly value="Not Authenticated" class="flex-1 px-3 py-2 rounded-lg border border-slate-300/50 dark:border-darkborder/50 bg-slate-50 dark:bg-slate-900 text-sm font-mono">
+          <button onclick="copySettingsKey()" class="px-4 py-2 rounded-lg border border-slate-300/50 dark:border-darkborder/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm font-medium transition-colors card-hover">Copy</button>
+        </div>
+      </div>
+
+      <!-- Provider keys -->
+      <div class="rise rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur p-6 shadow-sm space-y-4" style="--d:100ms">
+        <div>
+          <h3 class="text-base font-bold">Provider Keys (Encrypted at Rest)</h3>
+          <p class="text-xs text-slate-500">Keys are encrypted with Fernet before persistence. The gateway API exposes add-only key management, so the listing below is remembered locally in this browser.</p>
+        </div>
+
+        <div id="provider-key-cards" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+
+        <form onsubmit="handleAddProviderKey(event)" class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-200/50 dark:border-darkborder/50">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase mb-1 mt-4">Provider</label>
+            <select id="key-provider-select" class="w-full px-3 py-2 rounded-lg border border-slate-300/50 dark:border-darkborder/50 bg-slate-50 dark:bg-slate-900 text-sm"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase mb-1 mt-4">API Key</label>
+            <input type="password" id="key-api-key" required placeholder="gsk_... / sk-..." class="w-full px-3 py-2 rounded-lg border border-slate-300/50 dark:border-darkborder/50 bg-slate-50 dark:bg-slate-900 text-sm">
+          </div>
+          <div class="flex items-end">
+            <button type="submit" class="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm transition-colors card-hover">Save Key</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Tier mapping with connectors -->
+      <div class="rise rounded-xl border border-slate-200/50 dark:border-darkborder/50 bg-white/80 dark:bg-darkcard/80 backdrop-blur p-6 shadow-sm space-y-6" style="--d:160ms">
+        <div>
+          <h3 class="text-base font-bold">Complexity Tier Routing Policy</h3>
+          <p class="text-xs text-slate-500">Assign a provider and model for Simple, Medium, and Complex query scores.</p>
+        </div>
+
+        <form onsubmit="handleSaveTierConfig(event)" class="space-y-1">
+          <!-- Simple -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200/50 dark:border-darkborder/50 items-center">
+            <div>
+              <span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-blue-500/10 text-blue-500 border border-blue-500/20 mb-1">SIMPLE (1-3)</span>
+              <p class="text-xs text-slate-500">Fast math, greetings, lookups.</p>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Provider</label>
+              <select id="tier-simple-provider" onchange="onProviderChange('simple')" class="w-full px-2.5 py-1.5 rounded border border-slate-300/50 dark:border-darkborder/50 bg-white dark:bg-darkcard text-sm"></select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Model</label>
+              <select id="tier-simple-model" class="w-full px-2.5 py-1.5 rounded border border-slate-300/50 dark:border-darkborder/50 bg-white dark:bg-darkcard text-sm"></select>
+            </div>
+          </div>
+
+          <div class="flex justify-center py-1">
+            <svg width="24" height="22" viewBox="0 0 24 22" class="text-brand-500/60"><path d="M12 0 V14 M6 10 L12 17 L18 10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+
+          <!-- Medium -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200/50 dark:border-darkborder/50 items-center">
+            <div>
+              <span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-purple-500/10 text-purple-500 border border-purple-500/20 mb-1">MEDIUM (4-6)</span>
+              <p class="text-xs text-slate-500">Code generation, summarization.</p>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Provider</label>
+              <select id="tier-medium-provider" onchange="onProviderChange('medium')" class="w-full px-2.5 py-1.5 rounded border border-slate-300/50 dark:border-darkborder/50 bg-white dark:bg-darkcard text-sm"></select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Model</label>
+              <select id="tier-medium-model" class="w-full px-2.5 py-1.5 rounded border border-slate-300/50 dark:border-darkborder/50 bg-white dark:bg-darkcard text-sm"></select>
+            </div>
+          </div>
+
+          <div class="flex justify-center py-1">
+            <svg width="24" height="22" viewBox="0 0 24 22" class="text-brand-500/60"><path d="M12 0 V14 M6 10 L12 17 L18 10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+
+          <!-- Complex -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200/50 dark:border-darkborder/50 items-center">
+            <div>
+              <span class="inline-block px-2 py-0.5 rounded text-xs font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20 mb-1">COMPLEX (7-10)</span>
+              <p class="text-xs text-slate-500">System design, deep reasoning.</p>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Provider</label>
+              <select id="tier-complex-provider" onchange="onProviderChange('complex')" class="w-full px-2.5 py-1.5 rounded border border-slate-300/50 dark:border-darkborder/50 bg-white dark:bg-darkcard text-sm"></select>
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Model</label>
+              <select id="tier-complex-model" class="w-full px-2.5 py-1.5 rounded border border-slate-300/50 dark:border-darkborder/50 bg-white dark:bg-darkcard text-sm"></select>
+            </div>
+          </div>
+
+          <div class="pt-3">
+            <button type="submit" class="w-full py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium text-sm transition-colors card-hover">Save Routing Policy</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="relative z-10 border-t border-slate-200/50 dark:border-darkborder/50 mt-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 text-center text-xs text-slate-500">
+      Built with FastAPI <span class="mx-1.5 opacity-40">•</span> PyTorch <span class="mx-1.5 opacity-40">•</span> Redis <span class="mx-1.5 opacity-40">•</span> PostgreSQL <span class="mx-1.5 opacity-40">•</span> Docker
+    </div>
+  </footer>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="fixed top-20 right-4 z-[100] space-y-2 w-[min(92vw,20rem)]"></div>
+
+  <script>
+    /* ==================================================================
+       0. THEME
+       ================================================================== */
+    function initTheme() {
+      if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+    function toggleTheme() {
+      const root = document.documentElement;
+      root.classList.add('theme-transition');
+      if (root.classList.contains('dark')) {
+        root.classList.remove('dark');
+        localStorage.theme = 'light';
+      } else {
+        root.classList.add('dark');
+        localStorage.theme = 'dark';
+      }
+      setTimeout(() => root.classList.remove('theme-transition'), 350);
+    }
+    initTheme();
+
+    /* ==================================================================
+       1. STATE
+       ================================================================== */
+    let currentKey = localStorage.getItem('gw_key') || '';
+    let currentUserName = localStorage.getItem('gw_user_name') || '';
+    let providerModelsCache = {};
+    let providerList = [];
+    let modelDistChart = null;
+    let cacheDistChart = null;
+    let recentRequests = safeParse(localStorage.getItem('gw_recent_requests')) || [];
+    let savedProviders = safeParse(localStorage.getItem('gw_saved_providers')) || {};
+    let analyticsSnapshot = safeParse(localStorage.getItem('gw_analytics_snapshot')) || null;
+    let perfStats = { lastMiss: 0, lastHit: 0 };
+
+    function safeParse(s) { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+
+    /* ==================================================================
+       2. VIEW SWITCHING + NAV UNDERLINE
+       ================================================================== */
+    function switchView(viewName) {
+      document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+      const activeEl = document.getElementById(`view-${viewName}`);
+      if (activeEl) {
+        activeEl.classList.remove('hidden');
+        activeEl.classList.remove('view-enter');
+        void activeEl.offsetWidth; /* reflow to restart animation */
+        activeEl.classList.add('view-enter');
+      }
+
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        if (btn.dataset.view === viewName) {
+          btn.classList.add('text-brand-600', 'dark:text-brand-400', 'font-bold');
+        } else {
+          btn.classList.remove('text-brand-600', 'dark:text-brand-400', 'font-bold');
+        }
+      });
+      moveNavUnderline(viewName);
+
+      if (viewName === 'analytics') loadAnalyticsData();
+      if (viewName === 'settings') loadSettingsData();
+      if (viewName === 'chat') refreshChatBanner();
+      lucide.createIcons();
+    }
+
+    function moveNavUnderline(viewName) {
+      const underline = document.getElementById('nav-underline');
+      const btn = document.querySelector(`.nav-btn[data-view="${viewName}"]`);
+      const nav = document.getElementById('nav-tabs');
+      if (!underline || !btn || !nav) return;
+      const navRect = nav.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+      underline.style.left = (btnRect.left - navRect.left + 6) + 'px';
+      underline.style.width = Math.max(0, btnRect.width - 12) + 'px';
+      underline.style.opacity = '1';
+    }
+
+    function toggleMobileNav() {
+      document.getElementById('mobile-nav').classList.toggle('hidden');
+    }
+
+    /* ==================================================================
+       3. AUTH
+       ================================================================== */
+    function updateAuthUI() {
+      const container = document.getElementById('auth-status-container');
+      const settingsKeyInput = document.getElementById('settings-gw-key');
+
+      if (currentKey) {
+        container.innerHTML = `
+          <div class="flex items-center space-x-2">
+            <span class="text-xs font-medium text-slate-500 hidden sm:inline">${escapeHtml(currentUserName || 'Tenant')}</span>
+            <button onclick="handleLogout()" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300/50 dark:border-darkborder/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-red-500 transition-colors">Logout</button>
+          </div>`;
+        if (settingsKeyInput) settingsKeyInput.value = currentKey;
+      } else {
+        container.innerHTML = `
+          <button onclick="switchView('auth')" class="px-4 py-2 text-sm font-medium rounded-lg bg-brand-600 hover:bg-brand-700 text-white shadow-sm transition-colors">Sign In</button>`;
+        if (settingsKeyInput) settingsKeyInput.value = "Not Authenticated";
+      }
+      lucide.createIcons();
+    }
+
+    function setAuthTab(tab) {
+      const regForm = document.getElementById('form-register');
+      const loginForm = document.getElementById('form-login');
+      const regTab = document.getElementById('auth-tab-reg');
+      const loginTab = document.getElementById('auth-tab-login');
+      const active = ['border-brand-500', 'text-brand-600', 'dark:text-brand-400'];
+      if (tab === 'register') {
+        regForm.classList.remove('hidden'); loginForm.classList.add('hidden');
+        regTab.classList.add(...active); loginTab.classList.remove(...active);
+      } else {
+        regForm.classList.add('hidden'); loginForm.classList.remove('hidden');
+        loginTab.classList.add(...active); regTab.classList.remove(...active);
+      }
+    }
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      const name = document.getElementById('reg-name').value;
+      const email = document.getElementById('reg-email').value;
+      try {
+        const res = await fetch('/v1/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          currentKey = data.gateway_api_key;
+          currentUserName = data.name;
+          localStorage.setItem('gw_key', currentKey);
+          localStorage.setItem('gw_user_name', currentUserName);
+          document.getElementById('issued-key-text').value = currentKey;
+          document.getElementById('key-modal').classList.remove('hidden');
+          updateAuthUI();
+          toast('Tenant registered. Gateway key issued.', 'success');
+        } else {
+          toast(`Registration error: ${data.detail || 'request failed'}`, 'error');
+        }
+      } catch (err) {
+        toast(`Request failed: ${err.message}`, 'error');
+      }
+    }
+
+    function copyIssuedKey() {
+      navigator.clipboard.writeText(document.getElementById('issued-key-text').value);
+      toast('Gateway API key copied to clipboard.', 'success');
+    }
+    function copySettingsKey() {
+      if (!currentKey) return toast('Please sign in first.', 'error');
+      navigator.clipboard.writeText(currentKey);
+      toast('Gateway key copied.', 'success');
+    }
+    function handleLogin(e) {
+      e.preventDefault();
+      const key = document.getElementById('login-key').value.trim();
+      if (!key) return;
+      currentKey = key;
+      currentUserName = 'Tenant';
+      localStorage.setItem('gw_key', currentKey);
+      localStorage.setItem('gw_user_name', currentUserName);
+      updateAuthUI();
+      switchView('chat');
+      toast('Signed in with existing key.', 'success');
+    }
+    function handleLogout() {
+      localStorage.removeItem('gw_key');
+      localStorage.removeItem('gw_user_name');
+      currentKey = ''; currentUserName = '';
+      updateAuthUI();
+      switchView('landing');
+      toast('Signed out.', 'info');
+    }
+
+    /* ==================================================================
+       4. CHAT
+       ================================================================== */
+    function useSuggestion(btn) {
+      document.getElementById('query-input').value = btn.textContent.trim();
+      document.getElementById('query-input').focus();
+    }
+
+    async function handleSendQuery(e) {
+      e.preventDefault();
+      if (!currentKey) {
+        toast('Please register or sign in to use the Playground.', 'error');
+        return switchView('auth');
+      }
+      const input = document.getElementById('query-input');
+      const submitBtn = document.getElementById('query-submit-btn');
+      const query = input.value.trim();
+      if (!query) return;
+
+      input.value = '';
+      submitBtn.disabled = true;
+      document.getElementById('chat-empty')?.classList.add('hidden');
+      const stream = document.getElementById('chat-stream');
+
+      stream.insertAdjacentHTML('beforeend', `
+        <div class="flex justify-end msg-user">
+          <div class="max-w-[85%] rounded-2xl rounded-tr-none px-4 py-2.5 bg-brand-600 text-white text-sm break-words">
+            ${escapeHtml(query)}
+          </div>
+        </div>`);
+
+      const loadId = `load-${Date.now()}`;
+      stream.insertAdjacentHTML('beforeend', `
+        <div id="${loadId}" class="flex justify-start msg-assistant">
+          <div class="rounded-2xl rounded-tl-none px-4 py-3 bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center gap-1">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
+        </div>`);
+      stream.scrollTop = stream.scrollHeight;
+
+      try {
+        const res = await fetch('/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Gateway-Key': currentKey },
+          body: JSON.stringify({ query })
+        });
+        const data = await res.json();
+        document.getElementById(loadId)?.remove();
+
+        if (res.ok) {
+          renderAssistantMessage(stream, data, query);
+        } else {
+          stream.insertAdjacentHTML('beforeend', `
+            <div class="flex justify-start msg-assistant">
+              <div class="rounded-2xl rounded-tl-none px-4 py-3 bg-rose-500/10 text-rose-500 text-xs border border-rose-500/20">
+                ⚠️ Gateway error: ${escapeHtml(data.detail || 'Failed to process request.')}
+              </div>
+            </div>`);
+        }
+      } catch (err) {
+        document.getElementById(loadId)?.remove();
+        stream.insertAdjacentHTML('beforeend', `
+          <div class="flex justify-start msg-assistant">
+            <div class="rounded-2xl rounded-tl-none px-4 py-3 bg-rose-500/10 text-rose-500 text-xs border border-rose-500/20">
+              ⚠️ Network error: ${escapeHtml(err.message)}
+            </div>
+          </div>`);
+      }
+
+      submitBtn.disabled = false;
+      stream.scrollTop = stream.scrollHeight;
+      lucide.createIcons();
+    }
+
+    function renderAssistantMessage(stream, data, query) {
+      const mid = `msg-${Date.now()}`;
+      const latency = Number(data.latency_ms || 0);
+      if (data.cache_hit) perfStats.lastHit = latency; else perfStats.lastMiss = latency;
+
+      const tierColors = {
+        simple: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+        medium: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+        complex: 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+      };
+      const tierClass = tierColors[data.tier] || tierColors.simple;
+      const cacheBadge = data.cache_hit
+        ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">⚡ ${latency.toFixed(1)}ms (cache hit)</span>`
+        : `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">🌐 ${latency.toFixed(1)}ms (${escapeHtml(data.provider)})</span>`;
+
+      stream.insertAdjacentHTML('beforeend', `
+        <div class="flex flex-col items-start space-y-2 max-w-[90%] msg-assistant" id="${mid}">
+          <div class="rounded-2xl rounded-tl-none px-4 py-3 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm leading-relaxed whitespace-pre-wrap break-words">
+            <span id="text-${mid}"></span>
+          </div>
+          <div class="flex flex-wrap gap-1.5 items-center" id="badges-${mid}" style="visibility:hidden">
+            <span class="badge-pop" style="--d:0ms">${cacheBadge}</span>
+            <span class="badge-pop px-2 py-0.5 rounded text-[11px] font-bold border ${tierClass}" style="--d:100ms">🎯 Score ${data.complexity_score}/10 (${String(data.tier).toUpperCase()})</span>
+            <span class="badge-pop px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500" style="--d:200ms">🤖 ${escapeHtml(data.model_used)}</span>
+            <span class="badge-pop px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500" style="--d:300ms">💰 $${Number(data.cost_usd || 0).toFixed(6)}</span>
+          </div>
+          <details class="w-full">
+            <summary class="cursor-pointer select-none text-[11px] text-slate-400 hover:text-brand-500 transition-colors">Details &amp; metadata</summary>
+            <div class="mt-2 p-3 rounded-lg border border-slate-200/50 dark:border-darkborder/50 bg-slate-50/80 dark:bg-slate-900/60 space-y-3">
+              ${renderLatencyBars(latency, data.cache_hit)}
+              <pre class="text-[10px] leading-relaxed overflow-x-auto text-slate-600 dark:text-slate-300">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+            </div>
+          </details>
+        </div>`);
+
+      typeWriter(document.getElementById(`text-${mid}`), String(data.response || ''), () => {
+        document.getElementById(`badges-${mid}`).style.visibility = 'visible';
+      });
+
+      pushRecentRequest(query, data);
+    }
+
+    function renderLatencyBars(currentLatency, isHit) {
+      const ref = Math.max(perfStats.lastMiss, perfStats.lastHit, 1);
+      const missPct = Math.min(100, (perfStats.lastMiss / ref) * 100);
+      const hitPct = Math.min(100, (perfStats.lastHit / ref) * 100);
+      const curPct = Math.min(100, (currentLatency / ref) * 100);
+      const bar = (label, pct, color) => `
+        <div class="space-y-1">
+          <div class="flex justify-between text-[10px] text-slate-500"><span>${label}</span><span>${Math.round(pct)}%</span></div>
+          <div class="h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+            <div class="h-full ${color} transition-all duration-700" style="width:${pct}%"></div>
+          </div>
+        </div>`;
+      return `
+        <div class="space-y-2">
+          <p class="text-[10px] uppercase tracking-wider text-slate-400">Latency comparison</p>
+          ${bar('This request', curPct, isHit ? 'bg-emerald-500' : 'bg-amber-500')}
+          ${bar('Last LLM call', missPct, 'bg-amber-500')}
+          ${bar('Last cache hit', hitPct, 'bg-emerald-500')}
+        </div>`;
+    }
+
+    function typeWriter(el, text, done) {
+      if (!el) { if (done) done(); return; }
+      const n = text.length;
+      if (n === 0) { if (done) done(); return; }
+      const chunk = Math.max(1, Math.ceil(n / 240));
+      let i = 0;
+      el.classList.add('tw');
+      function tick() {
+        i += chunk;
+        el.textContent = text.slice(0, i);
+        if (i < n) {
+          setTimeout(tick, 10);
+        } else {
+          el.textContent = text;
+          el.classList.remove('tw');
+          if (done) done();
+        }
+      }
+      tick();
+    }
+
+    function pushRecentRequest(query, data) {
+      recentRequests.unshift({
+        query, score: data.complexity_score, tier: data.tier,
+        model: data.model_used, latency: data.latency_ms,
+        cost: data.cost_usd, cache: data.cache_hit
+      });
+      recentRequests = recentRequests.slice(0, 10);
+      localStorage.setItem('gw_recent_requests', JSON.stringify(recentRequests));
+    }
+
+    function clearChat() {
+      const stream = document.getElementById('chat-stream');
+      if (!stream) return;
+      if (!stream.querySelector('#chat-empty')) {
+        /* restore typed input after clearing */
+      }
+      stream.innerHTML = `
+        <div id="chat-empty" class="h-full flex flex-col items-center justify-center text-center text-slate-400 space-y-3">
+          <div class="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+            <i data-lucide="message-square" class="w-6 h-6 text-brand-500"></i>
+          </div>
+          <div>
+            <p class="font-semibold text-slate-700 dark:text-slate-300">LLM Gateway Playground</p>
+            <p class="text-xs">Type any simple, medium, or complex question to test live classification, caching, and model routing.</p>
+          </div>
+        </div>`;
+      lucide.createIcons();
+    }
+
+    async function refreshChatBanner() {
+      const banner = document.getElementById('chat-tier-banner');
+      if (!banner) return;
+      if (!currentKey) return banner.textContent = 'Sign in to see the active tier config';
+      try {
+        const res = await fetch('/v1/tiers/config', { headers: { 'X-Gateway-Key': currentKey } });
+        if (res.ok) {
+          const cfg = await res.json();
+          if (cfg.configured) {
+            banner.textContent = `Simple: ${cfg.simple.model} | Medium: ${cfg.medium.model} | Complex: ${cfg.complex.model}`;
+          } else {
+            banner.textContent = 'No tier config yet. (Configure in BYOK Keys)';
+          }
+        }
+      } catch (e) {
+        banner.textContent = 'Gateway ready';
+      }
+    }
+
+    /* ==================================================================
+       5. ANALYTICS
+       ================================================================== */
+    async function loadAnalyticsData() {
+      if (!currentKey) return;
+      try {
+        const [aRes, bRes] = await Promise.all([
+          fetch('/analytics', { headers: { 'X-Gateway-Key': currentKey } }),
+          fetch('/analytics/benchmark', { headers: { 'X-Gateway-Key': currentKey } })
+        ]);
+
+        if (aRes.ok) {
+          const a = await aRes.json();
+          animateCount(document.getElementById('stat-total-requests'), Number(a.total_requests || 0), { decimals: 0 });
+          document.getElementById('stat-total-tokens').textContent = `${Number(a.total_tokens || 0).toLocaleString()} tokens processed`;
+          animateCount(document.getElementById('stat-cache-hit-rate'), Number(a.cache_hit_rate || 0), { decimals: 1, suffix: '%' });
+          animateCount(document.getElementById('stat-cost-saved'), Number(a.cost_saved_usd || 0), { decimals: 4, prefix: '$' });
+          document.getElementById('stat-cost-saved-pct').textContent = `${Number(a.cost_saved_percent || 0).toFixed(1)}% saved vs baseline`;
+          animateCount(document.getElementById('stat-avg-latency'), Number(a.avg_latency_ms || 0), { decimals: 1, suffix: ' ms' });
+
+          applyTrends(a);
+          renderCacheChart(Number(a.cache_hit_rate || 0), 100 - Number(a.cache_hit_rate || 0));
+        }
+
+        if (bRes.ok) {
+          const b = await bRes.json();
+          renderModelDistChart(b.model_distribution || {});
+        }
+
+        renderRecentRequests();
+      } catch (err) {
+        console.error('Analytics load error:', err);
+        toast('Could not load analytics.', 'error');
+      }
+    }
+
+    function applyTrends(a) {
+      const map = {
+        'trend-total-requests': Number(a.total_requests || 0),
+        'trend-cache-hit-rate': Number(a.cache_hit_rate || 0),
+        'trend-cost-saved': Number(a.cost_saved_usd || 0),
+        'trend-avg-latency': Number(a.avg_latency_ms || 0)
+      };
+      const prevMap = {
+        'trend-total-requests': analyticsSnapshot ? Number(analyticsSnapshot.total_requests || 0) : null,
+        'trend-cache-hit-rate': analyticsSnapshot ? Number(analyticsSnapshot.cache_hit_rate || 0) : null,
+        'trend-cost-saved': analyticsSnapshot ? Number(analyticsSnapshot.cost_saved_usd || 0) : null,
+        'trend-avg-latency': analyticsSnapshot ? Number(analyticsSnapshot.avg_latency_ms || 0) : null
+      };
+      const invert = { 'trend-avg-latency': true };
+
+      Object.keys(map).forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const cur = map[id], prev = prevMap[id];
+        if (prev === null || prev === 0) { el.textContent = '—'; el.className = 'text-xs font-semibold text-slate-400'; return; }
+        const diff = ((cur - prev) / prev) * 100;
+        const up = diff >= 0;
+        const good = invert[id] ? !up : up;
+        el.textContent = `${up ? '↑' : '↓'} ${Math.abs(diff).toFixed(1)}%`;
+        el.className = `text-xs font-semibold ${good ? 'text-emerald-500' : 'text-rose-500'}`;
+      });
+
+      analyticsSnapshot = {
+        total_requests: Number(a.total_requests || 0),
+        cache_hit_rate: Number(a.cache_hit_rate || 0),
+        cost_saved_usd: Number(a.cost_saved_usd || 0),
+        avg_latency_ms: Number(a.avg_latency_ms || 0)
+      };
+      localStorage.setItem('gw_analytics_snapshot', JSON.stringify(analyticsSnapshot));
+    }
+
+    function animateCount(el, target, opts = {}) {
+      if (!el) return;
+      const decimals = opts.decimals ?? 0;
+      const prefix = opts.prefix || '';
+      const suffix = opts.suffix || '';
+      const duration = 1000;
+      const start = performance.now();
+      function frame(now) {
+        const t = Math.min(1, (now - start) / duration);
+        const eased = 1 - Math.pow(1 - t, 3);
+        const val = target * eased;
+        el.textContent = prefix + val.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) + suffix;
+        if (t < 1) requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    }
+
+    function renderCacheChart(hitRate, missRate) {
+      const ctx = document.getElementById('chart-cache-dist')?.getContext('2d');
+      if (!ctx) return;
+      if (cacheDistChart) cacheDistChart.destroy();
+      cacheDistChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Cache hits ($0)', 'LLM misses'],
+          datasets: [{
+            data: [hitRate || 0, missRate || 0],
+            backgroundColor: ['#10B981', '#3B82F6'],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 900, easing: 'easeOutQuart' },
+          plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+        }
+      });
+    }
+
+    function renderModelDistChart(dist) {
+      const ctx = document.getElementById('chart-model-dist')?.getContext('2d');
+      if (!ctx) return;
+      if (modelDistChart) modelDistChart.destroy();
+      const labels = Object.keys(dist);
+      const counts = labels.map(k => dist[k].count);
+      modelDistChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels.length ? labels : ['No traffic yet'],
+          datasets: [{
+            label: 'Requests',
+            data: counts.length ? counts : [0],
+            backgroundColor: '#3B82F6',
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 900, easing: 'easeOutQuart' },
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: 'rgba(150,150,150,0.1)' } },
+            x: { grid: { display: false }, ticks: { font: { size: 10 } } }
+          }
+        }
+      });
+    }
+
+    function renderRecentRequests() {
+      const body = document.getElementById('recent-requests-body');
+      if (!body) return;
+      if (!recentRequests.length) {
+        body.innerHTML = `<tr><td colspan="7" class="px-4 py-6 text-center text-slate-400">No requests in this session yet.</td></tr>`;
+        return;
+      }
+      const tierClass = { simple: 'text-blue-500', medium: 'text-purple-500', complex: 'text-rose-500' };
+      body.innerHTML = recentRequests.slice(0, 10).map(r => `
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+          <td class="px-4 py-3 max-w-[16rem] truncate" title="${escapeHtml(r.query)}">${escapeHtml(r.query)}</td>
+          <td class="px-3 py-3">${r.score}/10</td>
+          <td class="px-3 py-3 font-semibold ${tierClass[r.tier] || ''}">${escapeHtml(String(r.tier || '').toUpperCase())}</td>
+          <td class="px-3 py-3 font-mono text-[11px] max-w-[10rem] truncate" title="${escapeHtml(r.model || '')}">${escapeHtml(r.model || '')}</td>
+          <td class="px-3 py-3">${Number(r.latency || 0).toFixed(1)} ms</td>
+          <td class="px-3 py-3">$${Number(r.cost || 0).toFixed(6)}</td>
+          <td class="px-4 py-3">
+            ${r.cache
+              ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">HIT</span>'
+              : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">MISS</span>'}
+          </td>
+        </tr>`).join('');
+    }
+
+    /* ==================================================================
+       6. SETTINGS / BYOK
+       ================================================================== */
+    const PROVIDER_ICONS = {
+      groq: 'zap', gemini: 'sparkles', openai: 'circle-dot', anthropic: 'brain', together: 'users'
+    };
+
+    async function loadSettingsData() {
+      if (!currentKey) return;
+
+      /* Providers list (from the API, not hardcoded) */
+      if (!providerList.length) {
+        try {
+          const res = await fetch('/v1/providers');
+          if (res.ok) providerList = await res.json();
+        } catch (e) { /* leave empty */ }
+      }
+      if (!providerList.length) providerList = ['groq', 'gemini', 'openai', 'anthropic', 'together'];
+
+      /* Add-key dropdown */
+      const addSel = document.getElementById('key-provider-select');
+      if (addSel && addSel.options.length !== providerList.length) {
+        addSel.innerHTML = providerList.map(p => `<option value="${p}">${p.toUpperCase()}</option>`).join('');
+      }
+
+      /* Tier provider selects */
+      ['simple', 'medium', 'complex'].forEach(tier => {
+        const select = document.getElementById(`tier-${tier}-provider`);
+        if (select && select.options.length !== providerList.length) {
+          select.innerHTML = providerList.map(p => `<option value="${p}">${p.toUpperCase()}</option>`).join('');
+        }
+      });
+
+      /* Apply saved tier config */
+      try {
+        const res = await fetch('/v1/tiers/config', { headers: { 'X-Gateway-Key': currentKey } });
+        if (res.ok) {
+          const cfg = await res.json();
+          if (cfg.configured) {
+            for (const tier of ['simple', 'medium', 'complex']) {
+              const pSel = document.getElementById(`tier-${tier}-provider`);
+              const mSel = document.getElementById(`tier-${tier}-model`);
+              if (pSel) pSel.value = cfg[tier].provider;
+              await onProviderChange(tier);
+              if (mSel) mSel.value = cfg[tier].model;
+            }
+          } else {
+            for (const tier of ['simple', 'medium', 'complex']) await onProviderChange(tier);
+          }
+        }
+      } catch (e) { /* ignore */ }
+
+      renderProviderCards();
+    }
+
+    function renderProviderCards() {
+      const wrap = document.getElementById('provider-key-cards');
+      if (!wrap) return;
+      wrap.innerHTML = providerList.map(p => {
+        const saved = savedProviders[p];
+        return `
+          <div class="p-4 rounded-lg border border-slate-200/50 dark:border-darkborder/50 bg-slate-50/70 dark:bg-slate-900/50 card-hover">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <span class="w-8 h-8 rounded-lg bg-brand-500/10 text-brand-500 flex items-center justify-center">
+                  <i data-lucide="${PROVIDER_ICONS[p] || 'key'}" class="w-4 h-4"></i>
+                </span>
+                <div>
+                  <p class="text-sm font-semibold">${p.toUpperCase()}</p>
+                  <p class="text-[11px] text-slate-500">${saved ? escapeHtml(saved.label || 'Web Key') : 'No key saved'}</p>
+                </div>
+              </div>
+              <div class="flex items-center space-x-1">
+                <button onclick="testProviderConnection('${p}')" title="Test connection" class="p-1.5 rounded-md text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+                  <i data-lucide="plug-zap" class="w-3.5 h-3.5"></i>
+                </button>
+                ${saved ? `<button onclick="forgetProvider('${p}')" title="Forget locally" class="p-1.5 rounded-md text-rose-500 hover:bg-rose-500/10 transition-colors"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>` : ''}
+              </div>
+            </div>
+            <p class="mt-3 text-xs font-mono text-slate-500">${saved ? escapeHtml(saved.masked) : '••••••••••••'}</p>
+          </div>`;
+      }).join('');
+      lucide.createIcons();
+    }
+
+    function maskKey(key) {
+      if (!key) return '••••••••••••';
+      if (key.length <= 8) return '••••••••';
+      return `${key.slice(0, 3)}${'•'.repeat(6)}${key.slice(-4)}`;
+    }
+
+    async function onProviderChange(tier) {
+      const providerEl = document.getElementById(`tier-${tier}-provider`);
+      const modelSelect = document.getElementById(`tier-${tier}-model`);
+      if (!providerEl || !modelSelect) return;
+      const provider = providerEl.value;
+      modelSelect.innerHTML = '<option>Loading…</option>';
+      if (!providerModelsCache[provider]) {
+        try {
+          const res = await fetch(`/v1/providers/${provider}/models`);
+          providerModelsCache[provider] = res.ok ? await res.json() : [];
+        } catch (e) {
+          providerModelsCache[provider] = [];
+        }
+      }
+      const models = providerModelsCache[provider];
+      modelSelect.innerHTML = models.length
+        ? models.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')
+        : '<option value="">No models</option>';
+    }
+
+    async function handleAddProviderKey(e) {
+      e.preventDefault();
+      if (!currentKey) return toast('Please sign in first.', 'error');
+      const provider = document.getElementById('key-provider-select').value;
+      const apiKey = document.getElementById('key-api-key').value;
+      try {
+        const res = await fetch('/v1/providers/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Gateway-Key': currentKey },
+          body: JSON.stringify({ provider, api_key: apiKey, label: 'Web Key' })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          savedProviders[provider] = { label: 'Web Key', masked: maskKey(apiKey) };
+          localStorage.setItem('gw_saved_providers', JSON.stringify(savedProviders));
+          document.getElementById('key-api-key').value = '';
+          renderProviderCards();
+          toast(data.message || `${provider} key saved.`, 'success');
+        } else {
+          toast(`Error: ${data.detail || 'could not save key'}`, 'error');
+        }
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+
+    async function handleSaveTierConfig(e) {
+      e.preventDefault();
+      if (!currentKey) return toast('Please sign in first.', 'error');
+      const val = id => document.getElementById(id).value;
+      const payload = {
+        simple_provider: val('tier-simple-provider'), simple_model: val('tier-simple-model'),
+        medium_provider: val('tier-medium-provider'), medium_model: val('tier-medium-model'),
+        complex_provider: val('tier-complex-provider'), complex_model: val('tier-complex-model')
+      };
+      try {
+        const res = await fetch('/v1/tiers/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-Gateway-Key': currentKey },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast('Routing configuration updated.', 'success');
+          refreshChatBanner();
+        } else {
+          toast(`Error: ${data.detail || 'could not save config'}`, 'error');
+        }
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    }
+
+    async function testProviderConnection(provider) {
+      if (!currentKey) return toast('Please sign in first.', 'error');
+      toast(`Testing routing to ${provider.toUpperCase()}…`, 'info');
+      try {
+        const res = await fetch('/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Gateway-Key': currentKey },
+          body: JSON.stringify({ query: 'ping' })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          toast(`OK — routed via ${data.provider} / ${data.model_used} (${Number(data.latency_ms || 0).toFixed(0)}ms)`, 'success');
+        } else {
+          toast(`Test failed: ${data.detail || 'provider error'}`, 'error');
+        }
+      } catch (err) {
+        toast(`Test failed: ${err.message}`, 'error');
+      }
+    }
+
+    function forgetProvider(provider) {
+      if (savedProviders[provider]) {
+        delete savedProviders[provider];
+        localStorage.setItem('gw_saved_providers', JSON.stringify(savedProviders));
+        renderProviderCards();
+      }
+      toast(`${provider.toUpperCase()} removed from this browser. The gateway API does not expose server-side key deletion.`, 'info');
+    }
+
+    /* ==================================================================
+       7. TOASTS
+       ================================================================== */
+    function toast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const styles = {
+        success: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+        error: 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400',
+        info: 'border-brand-500/30 bg-brand-500/10 text-brand-600 dark:text-brand-400'
+      };
+      const el = document.createElement('div');
+      el.className = `toast rounded-lg border backdrop-blur-md px-4 py-3 text-xs shadow-lg ${styles[type] || styles.info}`;
+      el.textContent = message;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.classList.add('leaving');
+        setTimeout(() => el.remove(), 260);
+      }, 3000);
+    }
+
+    /* ==================================================================
+       8. ARCHITECTURE FLOW + SCROLL REVEAL
+       ================================================================== */
+    function buildArchitectureFlow() {
+      const wrap = document.getElementById('arch-flow');
+      if (!wrap) return;
+      const nodes = [
+        { label: 'User Query', icon: 'terminal' },
+        { label: 'Embedding', icon: 'binary' },
+        { label: 'Cache Check', icon: 'database' },
+        { label: 'Neural Classifier', icon: 'brain-circuit' },
+        { label: 'Router', icon: 'route' },
+        { label: 'LLM Provider', icon: 'cloud' },
+        { label: 'Response', icon: 'check-circle-2' }
+      ];
+      wrap.innerHTML = nodes.map((n, i) => {
+        const node = `
+          <div class="flex flex-col items-center gap-2 px-1">
+            <div class="node-glow w-11 h-11 rounded-xl bg-white dark:bg-darkcard border border-brand-500/30 flex items-center justify-center text-brand-500">
+              <i data-lucide="${n.icon}" class="w-5 h-5"></i>
+            </div>
+            <span class="text-[11px] text-slate-500 text-center leading-tight max-w-[5.5rem]">${n.label}</span>
+          </div>`;
+        const arrow = i < nodes.length - 1 ? `
+          <div class="flex items-center justify-center py-1 lg:py-0">
+            <svg width="46" height="14" viewBox="0 0 46 14" class="text-brand-500/50 rotate-90 lg:rotate-0">
+              <line class="flow-line" x1="2" y1="7" x2="38" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M37 2 L45 7 L37 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>` : '';
+        return node + arrow;
+      }).join('');
+      lucide.createIcons();
+    }
+
+    function initScrollReveal() {
+      const cards = document.querySelectorAll('.step-card');
+      if (!cards.length) return;
+      if (!('IntersectionObserver' in window)) {
+        cards.forEach(c => { c.classList.remove('opacity-0', 'translate-y-4'); });
+        return;
+      }
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((entry, idx) => {
+          if (entry.isIntersecting) {
+            setTimeout(() => {
+              entry.target.classList.remove('opacity-0', 'translate-y-4');
+            }, idx * 90);
+            io.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.15 });
+      cards.forEach(c => io.observe(c));
+    }
+
+    /* ==================================================================
+       9. UTIL
+       ================================================================== */
+    function escapeHtml(str) {
+      return String(str ?? '').replace(/[&<>'"]/g, tag => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+      }[tag] || tag));
+    }
+
+    /* ==================================================================
+       10. INIT
+       ================================================================== */
+    updateAuthUI();
+    buildArchitectureFlow();
+    initScrollReveal();
+    lucide.createIcons();
+    requestAnimationFrame(() => moveNavUnderline('landing'));
+    window.addEventListener('resize', () => {
+      const active = document.querySelector('.nav-btn.text-brand-600, .nav-btn.dark\\:text-brand-400');
+      moveNavUnderline(active ? active.dataset.view : 'landing');
+    });
+  </script>
+</body>
+</html>
