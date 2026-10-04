@@ -37,20 +37,16 @@ Most apps send every request to the most powerful (and most expensive) model. A 
 ## How it works
 
 ```mermaid
-flowchart TD
-    Q([User Query]) --> AUTH[Authenticate<br/>X-Gateway-Key]
-    AUTH --> CLS[Neural Classifier<br/>complexity 1–10]
-    CLS --> CACHE{Semantic Cache<br/>Redis}
-    CACHE -- HIT --> HIT[Return cached<br/>$0 · ~20 ms]
-    CACHE -- MISS --> ROUTE[Router<br/>tier to model]
-    ROUTE --> PROVIDER{LLM Provider<br/>BYOK key}
-    PROVIDER -- success --> STORE[Store in cache]
-    STORE --> LOG[Log to PostgreSQL]
-    LOG --> EVAL[Shadow evaluation]
-    LOG --> RESP([Return response])
-    PROVIDER -- failure --> FB{Fallback<br/>Complex to Medium to Simple}
-    FB -- retry --> ROUTE
-    FB -- exhausted --> ERR[502 Bad Gateway]
+flowchart LR
+    Q([Query]) --> A[Auth] --> C[Classifier 1-10] --> K{Cache}
+    K -- hit --> H[Cached ~20ms]
+    K -- miss --> R[Router] --> P{Provider}
+    P -- ok --> S[Store] --> L[Log DB]
+    L --> E[Shadow eval]
+    L --> O([Response])
+    P -- fail --> F{Fallback}
+    F -- retry --> R
+    F -- exhausted --> X[502]
 ```
 
 ---
